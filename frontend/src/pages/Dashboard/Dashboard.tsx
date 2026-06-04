@@ -292,7 +292,7 @@ export default function Dashboard() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(v: number, name: string) => [v, name]}
+                  formatter={(v, name) => [v ?? 0, name ?? '']}
                   contentStyle={{ background: '#111318', border: '1px solid #1e2330', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }}
                   itemStyle={{ color: '#e8eaf0' }}
                 />
