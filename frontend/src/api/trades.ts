@@ -31,6 +31,24 @@ export const tradesApi = {
     await client.delete(`/portfolios/${portfolioId}/trades/${tradeId}/`)
   },
 
+  deleteAll: async (portfolioId: string): Promise<void> => {
+    await client.post(`/portfolios/${portfolioId}/trades/clear/`)
+  },
+
+  bulkImport: async (
+    portfolioId: string,
+    trades: Partial<Trade>[],
+    mode: string,
+    fromDate?: string,
+  ): Promise<{ imported: number; skipped: number; duplicates: number; errors: string[] }> => {
+    const res = await client.post(`/portfolios/${portfolioId}/trades/bulk/`, {
+      trades,
+      mode,
+      from_date: fromDate ?? '',
+    })
+    return res.data.data
+  },
+
   importCsv: async (portfolioId: string, file: File, mapping: Record<string, string>) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -50,9 +68,9 @@ export const tradesApi = {
     return res.data.data
   },
 
-  getEquityCurve: async (portfolioId: string, segment?: string, basis?: string): Promise<EquityPoint[]> => {
+  getEquityCurve: async (portfolioId: string, segment?: string, basis?: string, year?: number, month?: number): Promise<EquityPoint[]> => {
     const res = await client.get(`/portfolios/${portfolioId}/stats/equity-curve/`, {
-      params: { segment, basis },
+      params: { segment, basis, year, month },
     })
     return res.data.data
   },

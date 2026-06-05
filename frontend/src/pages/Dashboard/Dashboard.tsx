@@ -165,7 +165,7 @@ export default function Dashboard() {
                 onClick={() => setSegment(s)}
                 className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
                   segment === s
-                    ? 'bg-emerald-400 text-gray-900 font-semibold'
+                    ? 'bg-blue-600 text-white font-semibold'
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
@@ -176,7 +176,7 @@ export default function Dashboard() {
           {/* Month filter */}
           <select
             onChange={(e) => handleMonthChange(e.target.value)}
-            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"
+            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
           >
             <option value="">All Time</option>
             {monthOptions.map((o) => (
@@ -258,10 +258,10 @@ export default function Dashboard() {
                 <Line
                   type="monotone"
                   dataKey="capital"
-                  stroke="#00e5a0"
+                  stroke="#3b82f6"
                   strokeWidth={2}
                   dot={false}
-                  activeDot={{ r: 4, fill: '#00e5a0' }}
+                  activeDot={{ r: 4, fill: '#3b82f6' }}
                 />
               </LineChart>
             </ResponsiveContainer>

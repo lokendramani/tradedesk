@@ -28,14 +28,17 @@ const modules: Module[] = [
     ],
   },
   {
-    id: 'etf',
-    label: 'ETF JOURNAL',
+    id: 'mf',
+    label: 'MF JOURNAL',
     icon: '📈',
-    comingSoon: true,
+    items: [
+      { path: '/mf', label: 'MF Dashboard' },
+    ],
   },
 ]
 
 const tradingPaths = ['/dashboard', '/trades', '/equity', '/segments']
+const mfPaths      = ['/mf']
 
 export default function Layout() {
   const { user, logout } = useAuthStore()
@@ -43,7 +46,8 @@ export default function Layout() {
   const location  = useLocation()
 
   const isInTrading = tradingPaths.some((p) => location.pathname.startsWith(p))
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ trading: isInTrading })
+  const isInMF      = mfPaths.some((p) => location.pathname.startsWith(p))
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ trading: isInTrading, mf: isInMF })
 
   const handleLogout = () => {
     logout()
@@ -59,9 +63,9 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 py-5 border-b border-[#1e2330]">
           <span className="text-xl font-bold tracking-tight text-gray-100">
-            Trade<span className="text-emerald-400">Desk</span>
+            Trade<span className="text-blue-400">Desk</span>
           </span>
-          <div className="text-[10px] text-gray-600 mt-0.5 tracking-widest uppercase">
+          <div className="text-[10px] text-blue-400/60 mt-0.5 tracking-widest uppercase">
             Pro Trading Journal
           </div>
         </div>
@@ -104,7 +108,7 @@ export default function Layout() {
                       className={({ isActive }) =>
                         `flex items-center gap-2 pl-4 pr-3 py-2.5 text-sm transition-all border-l-2 -ml-px ${
                           isActive
-                            ? 'text-emerald-400 border-emerald-400 bg-emerald-400/5'
+                            ? 'text-blue-400 border-blue-400 bg-blue-400/5'
                             : 'text-gray-500 border-transparent hover:text-gray-200 hover:bg-gray-800/50'
                         }`
                       }
@@ -120,12 +124,27 @@ export default function Layout() {
           {/* Divider */}
           <div className="border-t border-[#1e2330] my-2 mx-4" />
 
+          {/* Admin Panel (admin only) */}
+          {user?.role === 'ADMIN' && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-widest transition-colors ${
+                  isActive ? 'text-blue-400' : 'text-gray-500 hover:text-gray-200'
+                }`
+              }
+            >
+              <span className="text-base">🛡️</span>
+              <span>ADMIN PANEL</span>
+            </NavLink>
+          )}
+
           {/* Settings */}
           <NavLink
             to="/settings"
             className={({ isActive }) =>
               `flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-widest transition-colors ${
-                isActive ? 'text-emerald-400' : 'text-gray-500 hover:text-gray-200'
+                isActive ? 'text-blue-400' : 'text-gray-500 hover:text-gray-200'
               }`
             }
           >

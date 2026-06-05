@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { tradesApi } from '../../api/trades'
 import { useAuthStore } from '../../store/authStore'
@@ -61,7 +61,7 @@ export default function Segments() {
       const [yr, mo] = month ? month.split('-').map(Number) : [undefined, undefined]
       const [s, eq] = await Promise.all([
         tradesApi.getStats(portfolioId, seg, yr, mo),
-        tradesApi.getEquityCurve(portfolioId, seg),
+        tradesApi.getEquityCurve(portfolioId, seg, undefined, yr, mo),
       ])
       setStats(s)
       setEquity(Array.isArray(eq) ? eq : [])
@@ -96,7 +96,7 @@ export default function Segments() {
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"
+            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
           >
             <option value="">All Time</option>
             {monthOptions.map((o) => (
@@ -114,7 +114,7 @@ export default function Segments() {
             onClick={() => setSegment(s)}
             className={`px-4 py-2 rounded-lg text-sm font-mono font-semibold transition-colors border ${
               segment === s
-                ? 'bg-emerald-400 text-gray-900 border-emerald-400'
+                ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-gray-900 text-gray-400 border-[#1e2330] hover:border-gray-600 hover:text-gray-200'
             }`}
           >
@@ -178,15 +178,22 @@ export default function Segments() {
 
       {/* Equity curve for selected segment */}
       <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-5">
-        <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">
-          Equity Curve — {SEG_LABELS[segment]}
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-xs text-gray-500 uppercase tracking-widest">
+            {month ? 'Monthly P&L Curve' : 'Equity Curve'} — {SEG_LABELS[segment]}
+            {month && (
+              <span className="ml-2 text-gray-600">
+                ({monthOptions.find((o) => o.value === month)?.label ?? month})
+              </span>
+            )}
+          </div>
           {month && (
-            <span className="ml-2 text-gray-600">
-              ({monthOptions.find((o) => o.value === month)?.label ?? month})
-            </span>
+            <div className="text-[10px] text-gray-600">
+              Relative to start of period — starts at ₹0
+            </div>
           )}
         </div>
-        {equityData.length > 1 ? (
+        {equityData.length > 0 ? (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={equityData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" />
@@ -199,17 +206,21 @@ export default function Segments() {
               <YAxis
                 tick={{ fill: '#5a6480', fontSize: 10 }}
                 tickLine={false}
-                tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                width={60}
+                tickFormatter={(v) => {
+                  const abs = Math.abs(v)
+                  return abs >= 1000 ? `₹${(v / 1000).toFixed(1)}k` : `₹${v}`
+                }}
+                width={65}
               />
               <Tooltip content={<ChartTooltip />} />
+              {month && <ReferenceLine y={0} stroke="#5a6480" strokeDasharray="4 4" />}
               <Line
                 type="monotone"
                 dataKey="capital"
-                stroke="#00e5a0"
+                stroke="#3b82f6"
                 strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4, fill: '#00e5a0' }}
+                dot={equityData.length <= 20}
+                activeDot={{ r: 4, fill: '#3b82f6' }}
               />
             </LineChart>
           </ResponsiveContainer>

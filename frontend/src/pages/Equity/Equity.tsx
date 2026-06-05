@@ -87,7 +87,7 @@ export default function Equity() {
               <button key={s} onClick={() => setSegment(s)}
                 className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
                   segment === s
-                    ? 'bg-emerald-400 text-gray-900 font-semibold'
+                    ? 'bg-blue-600 text-white font-semibold'
                     : 'text-gray-400 hover:text-gray-200'
                 }`}>
                 {SEG_LABELS[s]}
@@ -152,8 +152,8 @@ export default function Equity() {
               <YAxis tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false}
                 tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} width={60} />
               <Tooltip content={<ChartTooltip />} />
-              <Line type="monotone" dataKey="capital" stroke="#00e5a0" strokeWidth={2}
-                dot={false} activeDot={{ r: 4, fill: '#00e5a0' }} />
+              <Line type="monotone" dataKey="capital" stroke="#3b82f6" strokeWidth={2}
+                dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (

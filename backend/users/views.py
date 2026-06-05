@@ -44,3 +44,22 @@ def refresh_token(request):
 @permission_classes([IsAuthenticated])
 def me(request):
     return Response({'success': True, 'data': UserSerializer(request.user).data})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_users(request):
+    if request.user.role != 'ADMIN' and not request.user.is_staff:
+        return Response({'success': False, 'message': 'Forbidden'}, status=403)
+    from .models import User
+    users = User.objects.all().order_by('created_at')
+    data = [
+        {
+            'id': str(u.id),
+            'full_name': u.full_name,
+            'email': u.email,
+            'role': u.role,
+            'created_at': u.created_at.strftime('%Y-%m-%d'),
+        }
+        for u in users
+    ]
+    return Response({'success': True, 'data': data})

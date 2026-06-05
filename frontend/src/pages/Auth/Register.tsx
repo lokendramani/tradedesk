@@ -56,7 +56,7 @@ export default function Register() {
 
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-100">
-            Trade<span className="text-emerald-400">Desk</span>
+            Trade<span className="text-blue-400">Desk</span>
           </h1>
           <p className="text-gray-500 text-sm mt-2">Create your account</p>
         </div>
@@ -85,7 +85,7 @@ export default function Register() {
                   className="w-full bg-gray-800 border border-gray-700
                              rounded-lg px-4 py-3 text-sm text-gray-100
                              placeholder-gray-600
-                             focus:outline-none focus:border-emerald-400 transition-colors"
+                             focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder={field.ph}
                 />
               </div>
@@ -94,8 +94,8 @@ export default function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-400 hover:bg-emerald-300
-                         text-gray-900 font-semibold rounded-lg py-3
+              className="w-full bg-blue-600 hover:bg-blue-500
+                         text-white font-semibold rounded-lg py-3
                          text-sm transition-colors disabled:opacity-50 mt-2"
             >
               {loading ? 'Creating account...' : 'Create Account'}
@@ -104,7 +104,7 @@ export default function Register() {
 
           <p className="text-center text-sm text-gray-500 mt-6">
             Already have an account?{' '}
-            <Link to="/login" className="text-emerald-400 hover:underline">
+            <Link to="/login" className="text-blue-400 hover:underline">
               Sign in
             </Link>
           </p>

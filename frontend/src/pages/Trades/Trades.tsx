@@ -25,7 +25,7 @@ function InputField({
         type={type} value={value} onChange={(e) => onChange(e.target.value)}
         required={required} step={step}
         className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                   placeholder-gray-600 focus:outline-none focus:border-emerald-400 transition-colors"
+                   placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
       />
     </div>
   )
@@ -43,7 +43,7 @@ function SelectField({
       <select
         value={value} onChange={(e) => onChange(e.target.value)} required={required}
         className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                   focus:outline-none focus:border-emerald-400 transition-colors"
+                   focus:outline-none focus:border-blue-500 transition-colors"
       >
         <option value="">Select...</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -166,7 +166,7 @@ function AddEditModal({
           <label className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">Notes</label>
           <textarea value={form.notes} onChange={(e) => set('notes')(e.target.value)} rows={2}
             className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                       focus:outline-none focus:border-emerald-400 transition-colors resize-none" />
+                       focus:outline-none focus:border-blue-500 transition-colors resize-none" />
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
@@ -175,7 +175,7 @@ function AddEditModal({
             Cancel
           </button>
           <button type="submit" disabled={saving}
-            className="px-4 py-2 text-sm bg-emerald-400 hover:bg-emerald-300 text-gray-900 font-semibold rounded transition-colors disabled:opacity-50">
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition-colors disabled:opacity-50">
             {saving ? 'Saving...' : (trade ? 'Update' : 'Add Trade')}
           </button>
         </div>
@@ -242,7 +242,7 @@ function CloseTradeModal({
             Cancel
           </button>
           <button type="submit" disabled={saving}
-            className="px-4 py-2 text-sm bg-emerald-400 hover:bg-emerald-300 text-gray-900 font-semibold rounded transition-colors disabled:opacity-50">
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition-colors disabled:opacity-50">
             {saving ? 'Closing...' : 'Close Trade'}
           </button>
         </div>
@@ -392,6 +392,14 @@ const IMPORT_FIELDS = [
 ]
 
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
+type ImportMode = 'smart' | 'append_from_date' | 'replace'
+
+const IMPORT_MODES: { value: ImportMode; label: string; desc: string }[] = [
+  { value: 'smart',            label: 'Smart',            desc: 'Skip duplicates automatically'       },
+  { value: 'append_from_date', label: 'Append from Date', desc: 'Only import trades on/after a date'  },
+  { value: 'replace',          label: 'Replace All',      desc: 'Delete all trades, then import fresh' },
+]
+
 function ImportModal({
   onClose, portfolioId, onDone,
 }: {
@@ -408,7 +416,11 @@ function ImportModal({
   const [dataRows, setDataRows] = useState<string[][]>([])
   const [mapping,  setMapping]  = useState<Record<string, string>>({})
   const [fileName, setFileName] = useState('')
-  const [progress, setProgress] = useState({ done: 0, total: 0, errors: [] as string[] })
+  const [mode,     setMode]     = useState<ImportMode>('smart')
+  const [fromDate, setFromDate] = useState('')
+  const [progress, setProgress] = useState({
+    done: 0, total: 0, imported: 0, duplicates: 0, errors: [] as string[],
+  })
 
   const handleFile = (f: File | null) => {
     if (!f) return
@@ -418,15 +430,10 @@ function ImportModal({
       const text = ev.target?.result as string
       const allRows = parseCSVText(text)
       if (allRows.length < 2) return
-
-      // Extract meaningful headers from row 0
       const hdrs = extractHeaders(allRows[0])
       const idxMap: Record<string, number> = {}
       allRows[0].forEach((h, i) => { idxMap[h.trim()] = i })
-
-      // Filter data rows: row[0] must be a positive integer (SrNo column)
       const rows = allRows.slice(1).filter((row) => /^\d+$/.test(row[0]?.trim() ?? ''))
-
       setHeaders(hdrs)
       setColIndex(idxMap)
       setDataRows(rows)
@@ -441,47 +448,33 @@ function ImportModal({
     return idx !== undefined ? (row[idx] ?? '').trim() : ''
   }
 
-  // Build a flat trade object from one CSV row using the current mapping.
-  // All values from the CSV are passed directly — no recalculation.
   const buildTradeData = (row: string[]): { trade: Partial<Trade>; scrip_name: string } | null => {
     const get = (field: string) => getCell(row, mapping[field] ?? '')
-
     const name = get('scrip_name')
     if (!name) return null
-
     const entry_price = parseFloat(get('entry_price'))
     const quantity    = parseFloat(get('quantity'))
     if (isNaN(entry_price) || isNaN(quantity)) return null
 
     const trade: Partial<Trade> = {
       scrip_name:  name,
-      segment:     normSegment(get('segment'))   as Trade['segment'],
+      segment:     normSegment(get('segment'))    as Trade['segment'],
       direction:   normDirection(get('direction')) as Trade['direction'],
       entry_date:  normDate(get('entry_date')),
       entry_price,
       quantity,
     }
-
-    // Optional entry fields
-    const sl        = get('stop_loss')
-    const target    = get('target')
-    const initRisk  = get('initial_risk')
-    const legs      = get('legs')
-    const note      = get('notes')
+    const sl = get('stop_loss'); const target = get('target')
+    const initRisk = get('initial_risk'); const legs = get('legs'); const note = get('notes')
     if (sl)       trade.stop_loss    = parseFloat(sl)
     if (target)   trade.target       = parseFloat(target)
     if (initRisk) trade.initial_risk = parseFloat(initRisk)
     if (legs)     trade.legs         = parseInt(legs)
     if (note)     trade.notes        = note
 
-    // Close fields — stored directly from CSV, no backend recalculation
-    const close_date  = get('close_date')
-    const close_price = get('close_price')
-    const gross_pl    = get('gross_pl')
-    const charges     = get('charges')
-    const net_income  = get('net_income')
-    const risk_reward = get('risk_reward')
-
+    const close_date = get('close_date'); const close_price = get('close_price')
+    const gross_pl   = get('gross_pl');   const charges     = get('charges')
+    const net_income = get('net_income'); const risk_reward = get('risk_reward')
     if (close_date)  trade.close_date  = normDate(close_date)
     if (close_price) trade.close_price = parseFloat(close_price)
     if (gross_pl)    trade.gross_pl    = parseFloat(gross_pl)
@@ -493,42 +486,45 @@ function ImportModal({
   }
 
   const handleImport = async () => {
-    const validRows = dataRows.map((r, i) => ({ parsed: buildTradeData(r), rowNum: i + 2 }))
-    const toImport  = validRows.filter((r) => r.parsed !== null)
+    const allTrades = dataRows
+      .map((r) => buildTradeData(r))
+      .filter((r): r is { trade: Partial<Trade>; scrip_name: string } => r !== null)
+      .map((r) => r.trade)
 
-    setProgress({ done: 0, total: toImport.length, errors: [] })
+    setProgress({ done: 0, total: allTrades.length, imported: 0, duplicates: 0, errors: [] })
     setPhase('importing')
 
-    const errors: string[] = []
-    let done = 0
-
-    for (const { parsed, rowNum } of toImport) {
-      const { trade, scrip_name } = parsed!
-      try {
-        // Send all CSV values in a single create call — no recalculation
-        await tradesApi.create(portfolioId, trade)
-        done++
-        setProgress((p) => ({ ...p, done }))
-      } catch (err: unknown) {
-        const ax = err as { response?: { data?: { message?: string } } }
-        const msg = ax.response?.data?.message ?? 'Failed'
-        errors.push(`Row ${rowNum} (${scrip_name}): ${msg}`)
-        done++
-        setProgress((p) => ({ ...p, done, errors: [...p.errors, errors[errors.length - 1]] }))
-      }
+    try {
+      const result = await tradesApi.bulkImport(
+        portfolioId,
+        allTrades,
+        mode,
+        fromDate || undefined,
+      )
+      setProgress({
+        done:       allTrades.length,
+        total:      allTrades.length,
+        imported:   result.imported,
+        duplicates: result.duplicates,
+        errors:     result.errors,
+      })
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } } }
+      setProgress((p) => ({
+        ...p,
+        errors: [ax.response?.data?.message ?? 'Import failed — check server connection'],
+      }))
     }
 
-    setProgress((p) => ({ ...p, errors }))
     setPhase('done')
     onDone()
   }
 
-  // Preview: first 3 data rows with transformed values
   const previewRows = dataRows.slice(0, 3).map((row) => ({
     scrip:     getCell(row, mapping.scrip_name  ?? ''),
-    segment:   normSegment(getCell(row, mapping.segment   ?? '')),
+    segment:   normSegment(getCell(row, mapping.segment    ?? '')),
     direction: normDirection(getCell(row, mapping.direction ?? '')),
-    date:      normDate(getCell(row, mapping.entry_date  ?? '')),
+    date:      normDate(getCell(row, mapping.entry_date   ?? '')),
     price:     getCell(row, mapping.entry_price ?? ''),
     qty:       getCell(row, mapping.quantity    ?? ''),
   }))
@@ -541,7 +537,7 @@ function ImportModal({
         {phase === 'upload' && (
           <div
             onClick={() => fileRef.current?.click()}
-            className="border-2 border-dashed border-gray-700 hover:border-emerald-400/50 rounded-lg p-10 text-center cursor-pointer transition-colors"
+            className="border-2 border-dashed border-gray-700 hover:border-blue-500/50 rounded-lg p-10 text-center cursor-pointer transition-colors"
           >
             <input ref={fileRef} type="file" accept=".csv" className="hidden"
               onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
@@ -556,8 +552,60 @@ function ImportModal({
           <>
             {/* File + row count */}
             <div className="flex items-center justify-between bg-gray-800/50 rounded px-3 py-2">
-              <span className="text-xs text-emerald-400 font-mono">{fileName}</span>
+              <span className="text-xs text-blue-400 font-mono">{fileName}</span>
               <span className="text-xs text-gray-500">{dataRows.length} trade row{dataRows.length !== 1 ? 's' : ''} detected</span>
+            </div>
+
+            {/* ── Import mode selector ── */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Import Mode</div>
+              <div className="grid grid-cols-3 gap-2">
+                {IMPORT_MODES.map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => setMode(m.value)}
+                    className={`px-3 py-2.5 rounded border text-left transition-colors ${
+                      mode === m.value
+                        ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                        : 'border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <div className="text-xs font-semibold">{m.label}</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5 leading-tight">{m.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* From date picker */}
+              {mode === 'append_from_date' && (
+                <div className="mt-3 flex items-center gap-3">
+                  <label className="text-[10px] text-gray-500 uppercase tracking-widest whitespace-nowrap">
+                    Import from date
+                  </label>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100
+                               focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  {fromDate && (
+                    <span className="text-[10px] text-gray-500">
+                      {dataRows.filter((row) => normDate(getCell(row, mapping.entry_date ?? '')) >= fromDate).length} rows match
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Replace warning */}
+              {mode === 'replace' && (
+                <div className="mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5">
+                  <span className="text-red-400 text-base flex-shrink-0 leading-tight">⚠</span>
+                  <div className="text-xs text-red-400">
+                    <strong>Warning:</strong> This will permanently delete all existing trades in this portfolio before importing. This cannot be undone.
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Mapping grid */}
@@ -574,9 +622,9 @@ function ImportModal({
                       value={mapping[field.key] ?? ''}
                       onChange={(e) => setMapping((m) => ({ ...m, [field.key]: e.target.value }))}
                       className={`w-full bg-gray-800 border rounded px-2 py-1.5 text-xs text-gray-100
-                                 focus:outline-none focus:border-emerald-400 transition-colors ${
+                                 focus:outline-none focus:border-blue-500 transition-colors ${
                         mapping[field.key]
-                          ? 'border-emerald-400/40'
+                          ? 'border-blue-400/40'
                           : field.required ? 'border-red-500/30' : 'border-gray-700'
                       }`}
                     >
@@ -588,20 +636,17 @@ function ImportModal({
               </div>
             </div>
 
-            {/* Preview of transformed data */}
+            {/* Preview */}
             {previewRows.some((r) => r.scrip) && (
               <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Preview (first 3 rows — after normalization)</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Preview (first 3 rows)</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs font-mono">
                     <thead>
                       <tr className="text-[10px] text-gray-600 uppercase">
-                        <th className="text-left pr-4 pb-1">Scrip</th>
-                        <th className="text-left pr-4 pb-1">Seg</th>
-                        <th className="text-left pr-4 pb-1">Dir</th>
-                        <th className="text-left pr-4 pb-1">Date</th>
-                        <th className="text-left pr-4 pb-1">Price</th>
-                        <th className="text-left pb-1">Qty</th>
+                        {['Scrip', 'Seg', 'Dir', 'Date', 'Price', 'Qty'].map((h) => (
+                          <th key={h} className="text-left pr-4 pb-1">{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -630,10 +675,13 @@ function ImportModal({
               </button>
               <button
                 onClick={handleImport}
-                disabled={!mapping.scrip_name || !mapping.entry_date || !mapping.entry_price}
-                className="px-4 py-2 text-sm bg-emerald-400 hover:bg-emerald-300 text-gray-900 font-semibold rounded transition-colors disabled:opacity-40"
+                disabled={
+                  !mapping.scrip_name || !mapping.entry_date || !mapping.entry_price ||
+                  (mode === 'append_from_date' && !fromDate)
+                }
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition-colors disabled:opacity-40"
               >
-                Import {dataRows.length} Trades
+                {mode === 'replace' ? '⚠ Replace & Import' : `Import ${dataRows.length} Trades`}
               </button>
             </div>
           </>
@@ -641,31 +689,43 @@ function ImportModal({
 
         {/* ── Importing phase ── */}
         {phase === 'importing' && (
-          <div className="py-6 text-center space-y-4">
+          <div className="py-10 text-center space-y-4">
+            <div className="flex justify-center">
+              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            </div>
             <div className="text-sm text-gray-300">
-              Importing trades... {progress.done} / {progress.total}
+              {mode === 'replace'
+                ? `Replacing all trades — sending ${progress.total} rows…`
+                : mode === 'append_from_date'
+                  ? `Importing trades from ${fromDate} — sending ${progress.total} rows…`
+                  : `Importing ${progress.total} trades (checking duplicates)…`}
             </div>
-            <div className="w-full bg-gray-800 rounded-full h-2">
-              <div
-                className="bg-emerald-400 h-2 rounded-full transition-all duration-300"
-                style={{ width: progress.total ? `${(progress.done / progress.total) * 100}%` : '0%' }}
-              />
-            </div>
+            <div className="text-xs text-gray-600">This completes in one request — no waiting per row</div>
           </div>
         )}
 
         {/* ── Done phase ── */}
         {phase === 'done' && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-4 py-3">
-              <span className="text-emerald-400 text-xl">✓</span>
-              <div>
-                <div className="text-sm text-emerald-400 font-semibold">
-                  {progress.total - progress.errors.length} of {progress.total} trades imported
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-3 text-center">
+                <div className="text-xl font-bold text-blue-400 font-mono">{progress.imported}</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">Imported</div>
+              </div>
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-3 text-center">
+                <div className="text-xl font-bold text-gray-400 font-mono">{progress.duplicates}</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">Duplicates</div>
+              </div>
+              <div className={`rounded-lg px-3 py-3 text-center ${
+                progress.errors.length > 0
+                  ? 'bg-red-500/10 border border-red-500/20'
+                  : 'bg-gray-800/50 border border-gray-700'
+              }`}>
+                <div className={`text-xl font-bold font-mono ${progress.errors.length > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                  {progress.errors.length}
                 </div>
-                {progress.errors.length > 0 && (
-                  <div className="text-xs text-gray-500 mt-0.5">{progress.errors.length} row{progress.errors.length !== 1 ? 's' : ''} failed</div>
-                )}
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">Errors</div>
               </div>
             </div>
 
@@ -679,7 +739,7 @@ function ImportModal({
 
             <div className="flex justify-end">
               <button onClick={onClose}
-                className="px-4 py-2 text-sm bg-emerald-400 hover:bg-emerald-300 text-gray-900 font-semibold rounded transition-colors">
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition-colors">
                 Done
               </button>
             </div>
@@ -783,7 +843,7 @@ export default function Trades() {
             Import CSV
           </button>
           <button onClick={openAdd}
-            className="px-4 py-2 text-sm bg-emerald-400 hover:bg-emerald-300 text-gray-900 font-semibold rounded transition-colors">
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded transition-colors">
             + Add Trade
           </button>
         </div>
@@ -795,27 +855,27 @@ export default function Trades() {
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search scrip..."
           className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 w-40
-                     placeholder-gray-600 focus:outline-none focus:border-emerald-400"
+                     placeholder-gray-600 focus:outline-none focus:border-blue-500"
         />
         <select value={segment} onChange={(e) => setSegment(e.target.value)}
-          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-emerald-400">
+          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-blue-500">
           <option value="">All Segments</option>
           {SEGMENTS.map((s) => <option key={s} value={s}>{SEG_LABEL[s]}</option>)}
         </select>
         <select value={direction} onChange={(e) => setDirection(e.target.value)}
-          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-emerald-400">
+          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-blue-500">
           <option value="">All Directions</option>
           <option value="LONG">Long</option>
           <option value="SHORT">Short</option>
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)}
-          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-emerald-400">
+          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-blue-500">
           <option value="">All Status</option>
           <option value="open">Open</option>
           <option value="closed">Closed</option>
         </select>
         <select value={result} onChange={(e) => setResult(e.target.value)}
-          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-emerald-400">
+          className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 focus:outline-none focus:border-blue-500">
           <option value="">All Results</option>
           <option value="profit">Profit</option>
           <option value="loss">Loss</option>
@@ -829,13 +889,15 @@ export default function Trades() {
 
       {/* Table */}
       <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)]">
           <table className="w-full text-xs font-mono">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-gray-900">
               <tr className="border-b border-[#1e2330]">
                 {['Scrip', 'Seg', 'Dir', 'Entry Date', 'Entry ₹', 'Qty', 'SL ₹', 'Target ₹',
                   'Init Risk', 'Close Date', 'Close ₹', 'Gross P&L', 'Charges', 'Net ₹', 'R:R', 'Status', 'Actions'].map((h) => (
-                  <th key={h} className="text-left text-[10px] text-gray-600 uppercase tracking-widest px-3 py-3 whitespace-nowrap">
+                  <th key={h} className={`text-left text-[10px] text-gray-600 uppercase tracking-widest px-3 py-3 whitespace-nowrap bg-gray-900 ${
+                    h === 'Actions' ? 'sticky right-0 z-10 shadow-[-4px_0_8px_rgba(0,0,0,0.5)]' : ''
+                  }`}>
                     {h}
                   </th>
                 ))}
@@ -849,7 +911,7 @@ export default function Trades() {
                   </td>
                 </tr>
               ) : trades.map((t) => (
-                <tr key={t.id} className="border-b border-[#1e2330]/50 hover:bg-gray-800/30 transition-colors">
+                <tr key={t.id} className="group border-b border-[#1e2330]/50 hover:bg-gray-800/30 transition-colors">
                   <td className="px-3 py-3 font-semibold text-gray-200 whitespace-nowrap">{t.scrip_name}</td>
                   <td className="px-3 py-3">
                     <Badge text={SEG_LABEL[t.segment] ?? t.segment} cls="bg-gray-800 text-gray-400" />
@@ -878,13 +940,13 @@ export default function Trades() {
                   <td className="px-3 py-3">
                     {t.is_closed
                       ? <Badge text="Closed" cls="bg-gray-800 text-gray-500" />
-                      : <Badge text="Open"   cls="bg-emerald-400/10 text-emerald-400" />}
+                      : <Badge text="Open"   cls="bg-blue-400/10 text-blue-400" />}
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap">
+                  <td className="px-3 py-3 whitespace-nowrap sticky right-0 bg-gray-900 group-hover:bg-[#1e242f] transition-colors shadow-[-4px_0_8px_rgba(0,0,0,0.4)]">
                     <div className="flex items-center gap-1">
                       {!t.is_closed && (
                         <button onClick={() => openClose(t)}
-                          className="text-[10px] px-2 py-1 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/20 rounded transition-colors">
+                          className="text-[10px] px-2 py-1 bg-blue-400/10 text-blue-400 hover:bg-blue-400/20 rounded transition-colors">
                           Close
                         </button>
                       )}

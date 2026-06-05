@@ -9,3 +9,4 @@ yfinance==0.2.38
 pandas==2.2.2
 django-filter==24.2
 gunicorn==21.2.0
+pdfplumber==0.11.4

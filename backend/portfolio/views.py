@@ -7,7 +7,13 @@ class PortfolioListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Portfolio.objects.filter(user=self.request.user)
+        user = self.request.user
+        if user.role == 'ADMIN' or user.is_staff:
+            user_id = self.request.query_params.get('user_id')
+            if user_id:
+                return Portfolio.objects.filter(user_id=user_id)
+            return Portfolio.objects.all()
+        return Portfolio.objects.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

@@ -12,6 +12,8 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 def get_portfolio(portfolio_id, user):
+    if user.role == 'ADMIN' or user.is_staff:
+        return get_object_or_404(Portfolio, id=portfolio_id)
     return get_object_or_404(Portfolio, id=portfolio_id, user=user)
 
 class TradeListCreateView(generics.ListCreateAPIView):
@@ -56,15 +58,41 @@ def close_trade(request, portfolio_id, pk):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def import_csv(request, portfolio_id):
-    portfolio = get_portfolio(portfolio_id, request.user)
-    file      = request.FILES.get('file')
-    mapping   = request.data
+    portfolio     = get_portfolio(portfolio_id, request.user)
+    file          = request.FILES.get('file')
+    mapping       = request.data
+    mode          = mapping.get('mode', 'smart')        # smart | append_from_date | replace
+    from_date_str = mapping.get('from_date', '').strip()
+
     if not file:
         return Response({'success': False, 'message': 'No file provided'}, status=400)
+
+    from_date = None
+    if from_date_str:
+        try:
+            from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({'success': False, 'message': 'Invalid from_date — use YYYY-MM-DD'}, status=400)
+
     try:
+        # replace: wipe portfolio trades before importing
+        if mode == 'replace':
+            Trade.objects.filter(portfolio=portfolio).delete()
+
+        # Pre-fetch existing trades as a set of tuples for O(1) duplicate lookup.
+        # Fetched AFTER any delete so replace mode starts with an empty set.
+        existing_trades = set()
+        if mode == 'smart':
+            existing_trades = set(
+                Trade.objects.filter(portfolio=portfolio)
+                .values_list('scrip_name', 'entry_date', 'entry_price', 'quantity', 'direction')
+            )
+
         decoded  = file.read().decode('utf-8')
         reader   = csv.DictReader(io.StringIO(decoded))
-        imported, skipped, errors = 0, 0, []
+        trades_to_create             = []
+        imported, skipped, duplicates, errors = 0, 0, 0, []
+
         DATE_FORMATS = ['%Y-%m-%d', '%d-%b-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y']
 
         def parse_date(s):
@@ -91,43 +119,218 @@ def import_csv(request, portfolio_id):
                 if not scrip:
                     skipped += 1
                     continue
-                seg_raw = get_val(row, 'segment') or 'EQUITY'
-                seg_map = {'equity': 'EQUITY', 'commodity': 'COMMODITY',
-                           'f&o': 'F_AND_O', 'fno': 'F_AND_O', 'f_and_o': 'F_AND_O'}
-                segment   = seg_map.get(seg_raw.lower(), 'EQUITY')
-                dir_raw   = get_val(row, 'direction') or 'LONG'
-                direction = 'SHORT' if dir_raw.strip().upper() == 'SHORT' else 'LONG'
+
                 entry_date_str = get_val(row, 'entryDate')
                 if not entry_date_str:
                     skipped += 1
                     continue
+
+                entry_date  = parse_date(entry_date_str)
+                entry_price = parse_decimal(get_val(row, 'entryPrice'))
+                quantity    = parse_decimal(get_val(row, 'quantity'))
+
+                # append_from_date: skip rows before the cutoff
+                if mode == 'append_from_date' and from_date and entry_date < from_date:
+                    skipped += 1
+                    continue
+
+                seg_raw   = get_val(row, 'segment') or 'EQUITY'
+                seg_map   = {'equity': 'EQUITY', 'commodity': 'COMMODITY',
+                             'f&o': 'F_AND_O', 'fno': 'F_AND_O', 'f_and_o': 'F_AND_O'}
+                segment   = seg_map.get(seg_raw.lower(), 'EQUITY')
+                dir_raw   = get_val(row, 'direction') or 'LONG'
+                direction = 'SHORT' if dir_raw.strip().upper() == 'SHORT' else 'LONG'
+
+                # smart: O(1) set lookup instead of a DB query per row
+                if mode == 'smart':
+                    key = (scrip, entry_date, entry_price, quantity, direction)
+                    if key in existing_trades:
+                        duplicates += 1
+                        continue
+                    existing_trades.add(key)   # catch within-CSV dupes too
+
                 trade = Trade(
                     portfolio   = portfolio,
                     scrip_name  = scrip,
                     segment     = segment,
                     direction   = direction,
                     legs        = int(get_val(row, 'legs')) if get_val(row, 'legs') else None,
-                    entry_date  = parse_date(entry_date_str),
-                    entry_price = parse_decimal(get_val(row, 'entryPrice')),
-                    quantity    = parse_decimal(get_val(row, 'quantity')),
+                    entry_date  = entry_date,
+                    entry_price = entry_price,
+                    quantity    = quantity,
                     stop_loss   = parse_decimal(get_val(row, 'stopLoss')) or None,
                     notes       = get_val(row, 'notes'),
                 )
+
                 close_date_str  = get_val(row, 'closeDate')
                 close_price_str = get_val(row, 'closePrice')
                 if close_date_str:
-                    trade.close_date = parse_date(close_date_str)
+                    trade.close_date  = parse_date(close_date_str)
                 if close_price_str:
                     trade.close_price = parse_decimal(close_price_str)
-                trade.save()
+
+                # bulk_create skips save() and signals, so compute derived
+                # fields (target, initial_risk, gross_pl, charges, net_income,
+                # risk_reward) the same way save() would via recalculate().
+                trade.recalculate()
+
+                trades_to_create.append(trade)
                 imported += 1
+
             except Exception as e:
                 errors.append(f"Row {i}: {str(e)}")
                 skipped += 1
+
+        if trades_to_create:
+            Trade.objects.bulk_create(trades_to_create, batch_size=100)
+
         return Response({'success': True, 'data': {
-            'imported': imported, 'skipped': skipped, 'errors': errors}})
+            'imported':   imported,
+            'skipped':    skipped,
+            'duplicates': duplicates,
+            'errors':     errors,
+        }})
     except Exception as e:
         return Response({'success': False, 'message': str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def bulk_import_trades(request, portfolio_id):
+    """
+    Accepts pre-parsed trades as JSON, handles dedup/replace in bulk.
+    Replaces the slow per-row create loop in the frontend.
+    """
+    portfolio     = get_portfolio(portfolio_id, request.user)
+    trades_data   = request.data.get('trades', [])
+    mode          = request.data.get('mode', 'smart')
+    from_date_str = (request.data.get('from_date') or '').strip()
+
+    from_date = None
+    if from_date_str:
+        try:
+            from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({'success': False, 'message': 'Invalid from_date — use YYYY-MM-DD'}, status=400)
+
+    if mode == 'replace':
+        Trade.objects.filter(portfolio=portfolio).delete()
+
+    # One query → set of tuples for O(1) dedup — avoids N DB round-trips
+    existing_trades = set()
+    if mode == 'smart':
+        existing_trades = set(
+            Trade.objects.filter(portfolio=portfolio)
+            .values_list('scrip_name', 'entry_date', 'entry_price', 'quantity', 'direction')
+        )
+
+    DATE_FORMATS = ['%Y-%m-%d', '%d-%b-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y']
+
+    def parse_date(s):
+        if not s:
+            return None
+        for fmt in DATE_FORMATS:
+            try:
+                return datetime.strptime(str(s).strip(), fmt).date()
+            except ValueError:
+                continue
+        raise ValueError(f"Cannot parse date: {s}")
+
+    def to_decimal(v):
+        if v is None or str(v).strip() == '':
+            return None
+        try:
+            return Decimal(str(v).strip().replace(',', ''))
+        except Exception:
+            return None
+
+    SEG_MAP = {
+        'EQUITY': 'EQUITY', 'COMMODITY': 'COMMODITY',
+        'F_AND_O': 'F_AND_O', 'F&O': 'F_AND_O', 'FNO': 'F_AND_O',
+    }
+
+    trades_to_create             = []
+    imported, skipped, duplicates, errors = 0, 0, 0, []
+
+    for i, td in enumerate(trades_data, 1):
+        try:
+            scrip = (td.get('scrip_name') or '').strip()
+            if not scrip:
+                skipped += 1
+                continue
+
+            entry_date  = parse_date(td.get('entry_date'))
+            entry_price = to_decimal(td.get('entry_price'))
+            quantity    = to_decimal(td.get('quantity'))
+
+            if not entry_date or entry_price is None or quantity is None:
+                skipped += 1
+                continue
+
+            direction = 'SHORT' if str(td.get('direction', '')).upper() == 'SHORT' else 'LONG'
+
+            if mode == 'append_from_date' and from_date and entry_date < from_date:
+                skipped += 1
+                continue
+
+            if mode == 'smart':
+                key = (scrip, entry_date, entry_price, quantity, direction)
+                if key in existing_trades:
+                    duplicates += 1
+                    continue
+                existing_trades.add(key)
+
+            segment = SEG_MAP.get(str(td.get('segment', 'EQUITY')).upper(), 'EQUITY')
+            legs_raw = td.get('legs')
+
+            trade = Trade(
+                portfolio   = portfolio,
+                scrip_name  = scrip,
+                segment     = segment,
+                direction   = direction,
+                legs        = int(legs_raw) if legs_raw else None,
+                entry_date  = entry_date,
+                entry_price = entry_price,
+                quantity    = quantity,
+                stop_loss   = to_decimal(td.get('stop_loss')) or None,
+                notes       = td.get('notes') or '',
+            )
+
+            close_date  = parse_date(td.get('close_date'))
+            close_price = to_decimal(td.get('close_price'))
+            if close_date:
+                trade.close_date  = close_date
+            if close_price:
+                trade.close_price = close_price
+
+            # bulk_create skips save() — compute derived fields manually
+            trade.recalculate()
+
+            trades_to_create.append(trade)
+            imported += 1
+
+        except Exception as e:
+            errors.append(f"Row {i} ({td.get('scrip_name', '?')}): {str(e)}")
+            skipped += 1
+
+    if trades_to_create:
+        Trade.objects.bulk_create(trades_to_create, batch_size=500)
+
+    return Response({'success': True, 'data': {
+        'imported':   imported,
+        'skipped':    skipped,
+        'duplicates': duplicates,
+        'errors':     errors,
+    }})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def clear_trades(request, portfolio_id):
+    """Delete all trades for a portfolio (used by replace-mode import)."""
+    portfolio = get_portfolio(portfolio_id, request.user)
+    deleted, _ = Trade.objects.filter(portfolio=portfolio).delete()
+    return Response({'success': True, 'data': {'deleted': deleted}})
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -190,6 +393,8 @@ def equity_curve(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     segment   = request.query_params.get('segment')
     basis     = request.query_params.get('basis', 'net_income')
+    year      = request.query_params.get('year')
+    month     = request.query_params.get('month')
     qs = Trade.objects.filter(portfolio=portfolio).exclude(
         close_date__isnull=True, close_price__isnull=True
     ).filter(net_income__isnull=False)
@@ -208,6 +413,22 @@ def equity_curve(request, portfolio_id):
         date = str(t.close_date or t.entry_date)
         points.append({'date': date,
                        'capital': str(running.quantize(Decimal('0.01'), ROUND_HALF_UP))})
+    if year and month:
+        prefix = f"{year}-{int(month):02d}"
+        # Capital level just before the selected month — curve will start relative to this
+        pre_points  = [p for p in points if not p['date'].startswith(prefix)]
+        base_capital = Decimal(pre_points[-1]['capital']) if pre_points else portfolio.starting_capital
+        month_points = [p for p in points if p['date'].startswith(prefix)]
+        # Return relative P&L so the curve starts at 0 for the selected period
+        points = [
+            {
+                'date':    p['date'],
+                'capital': str(
+                    (Decimal(p['capital']) - base_capital).quantize(Decimal('0.01'), ROUND_HALF_UP)
+                ),
+            }
+            for p in month_points
+        ]
     return Response({'success': True, 'data': points})
 
 @api_view(['GET'])
