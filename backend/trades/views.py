@@ -8,8 +8,9 @@ from .models import Trade
 from .serializers import TradeSerializer, CloseTradeSerializer
 from .filters import TradeFilter
 import csv, io
-from datetime import datetime
+from datetime import datetime, date as date_type
 from decimal import Decimal, ROUND_HALF_UP
+from django.http import HttpResponse
 
 def get_portfolio(portfolio_id, user):
     if user.role == 'ADMIN' or user.is_staff:
@@ -93,7 +94,12 @@ def import_csv(request, portfolio_id):
         trades_to_create             = []
         imported, skipped, duplicates, errors = 0, 0, 0, []
 
-        DATE_FORMATS = ['%Y-%m-%d', '%d-%b-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y']
+        DATE_FORMATS = [
+            '%Y-%m-%d',
+            '%d-%b-%Y', '%d-%b-%y',    # 15-Jan-2024, 15-Jan-24
+            '%d-%B-%Y', '%d-%B-%y',    # 15-January-2024, 15-January-24
+            '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y',
+        ]
 
         def parse_date(s):
             for fmt in DATE_FORMATS:
@@ -224,7 +230,12 @@ def bulk_import_trades(request, portfolio_id):
             .values_list('scrip_name', 'entry_date', 'entry_price', 'quantity', 'direction')
         )
 
-    DATE_FORMATS = ['%Y-%m-%d', '%d-%b-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y']
+    DATE_FORMATS = [
+        '%Y-%m-%d',
+        '%d-%b-%Y', '%d-%b-%y',    # 15-Jan-2024, 15-Jan-24
+        '%d-%B-%Y', '%d-%B-%y',    # 15-January-2024, 15-January-24
+        '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y',
+    ]
 
     def parse_date(s):
         if not s:
@@ -463,3 +474,59 @@ def closed_months(request, portfolio_id):
         d = t.close_date or t.entry_date
         months.add(f"{d.year}-{d.month:02d}")
     return Response({'success': True, 'data': sorted(months)})
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def sample_csv(request, portfolio_id):
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="tradedesk_sample.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Scrip', 'Segment', 'Direction', 'Entry Date', 'Entry Price',
+                     'Quantity', 'Stop Loss', 'Close Date', 'Close Price', 'Legs', 'Notes'])
+    writer.writerow(['RELIANCE',     'EQUITY',     'LONG',  '2024-01-15', '2500', '10', '2400', '2024-02-10', '2680', '',  'Breakout trade'])
+    writer.writerow(['TATASTEEL',    'EQUITY',     'SHORT', '2024-03-01', '160',  '25', '170',  '',           '',     '',  'Open short position'])
+    writer.writerow(['CRUDEOIL',     'COMMODITY',  'LONG',  '2024-05-10', '6800', '5',  '6600', '2024-05-20', '7100', '', 'MCX crude'])
+    writer.writerow(['NIFTY25000CE', 'F&O',        'LONG',  '2024-06-01', '150',  '50', '120',  '2024-06-18', '210',  '2', 'Options buy'])
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def export_csv(request, portfolio_id):
+    portfolio = get_portfolio(portfolio_id, request.user)
+    trades    = Trade.objects.filter(portfolio=portfolio).order_by('entry_date', 'created_at')
+
+    safe_name = portfolio.name.replace(' ', '_').replace('/', '-')
+    filename  = f"trades_{safe_name}_{date_type.today()}.csv"
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    SEG_LABEL = {'EQUITY': 'EQUITY', 'COMMODITY': 'COMMODITY', 'F_AND_O': 'F&O'}
+    writer = csv.writer(response)
+    writer.writerow(['Scrip', 'Segment', 'Direction', 'Entry Date', 'Entry Price',
+                     'Quantity', 'Stop Loss', 'Target', 'Initial Risk', 'Legs',
+                     'Close Date', 'Close Price', 'Gross P&L', 'Charges',
+                     'Net Income', 'Risk/Reward', 'Notes'])
+    for t in trades:
+        writer.writerow([
+            t.scrip_name,
+            SEG_LABEL.get(t.segment, t.segment),
+            t.direction,
+            str(t.entry_date),
+            str(t.entry_price),
+            str(t.quantity),
+            str(t.stop_loss)    if t.stop_loss    is not None else '',
+            str(t.target)       if t.target       is not None else '',
+            str(t.initial_risk) if t.initial_risk is not None else '',
+            str(t.legs)         if t.legs         is not None else '',
+            str(t.close_date)   if t.close_date   is not None else '',
+            str(t.close_price)  if t.close_price  is not None else '',
+            str(t.gross_pl)     if t.gross_pl     is not None else '',
+            str(t.charges)      if t.charges      is not None else '',
+            str(t.net_income)   if t.net_income   is not None else '',
+            str(t.risk_reward)  if t.risk_reward  is not None else '',
+            t.notes,
+        ])
+    return response

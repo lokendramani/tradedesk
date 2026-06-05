@@ -289,14 +289,25 @@ function parseCSVText(text: string): string[][] {
 function normDate(v: string): string {
   const s = v.trim()
   const MONTHS: Record<string, string> = {
-    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    jan: '01', january: '01',
+    feb: '02', february: '02',
+    mar: '03', march: '03',
+    apr: '04', april: '04',
+    may: '05',
+    jun: '06', june: '06',
+    jul: '07', july: '07',
+    aug: '08', august: '08',
+    sep: '09', september: '09',
+    oct: '10', october: '10',
+    nov: '11', november: '11',
+    dec: '12', december: '12',
   }
-  // 1-Apr-2026 / 01-Apr-2026 / 1/Apr/2026
-  const m1 = s.match(/^(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{4})$/)
+  // 1-Apr-2026, 15-Mar-24, 4-April-2024, 01-January-24, etc.
+  const m1 = s.match(/^(\d{1,2})[/-]([A-Za-z]{3,9})[/-](\d{2,4})$/)
   if (m1) {
     const mo = MONTHS[m1[2].toLowerCase()]
-    if (mo) return `${m1[3]}-${mo}-${m1[1].padStart(2, '0')}`
+    const yr = m1[3].length === 2 ? `20${m1[3]}` : m1[3]
+    if (mo) return `${yr}-${mo}-${m1[1].padStart(2, '0')}`
   }
   // DD/MM/YYYY
   const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
@@ -368,27 +379,23 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
 }
 
 const IMPORT_FIELDS = [
-  // Required entry fields
-  { key: 'scrip_name',  label: 'Scrip Name',    required: true  },
-  { key: 'segment',     label: 'Segment',        required: true  },
-  { key: 'direction',   label: 'Direction',      required: true  },
-  { key: 'entry_date',  label: 'Entry Date',     required: true  },
-  { key: 'entry_price', label: 'Entry Price ₹',  required: true  },
-  { key: 'quantity',    label: 'Quantity',        required: true  },
-  // Optional entry fields
-  { key: 'stop_loss',   label: 'Stop Loss ₹',   required: false },
-  { key: 'target',      label: 'Target ₹',       required: false },
-  { key: 'initial_risk',label: 'Initial Risk ₹', required: false },
-  { key: 'legs',        label: 'Legs (F&O)',      required: false },
-  // Close fields
-  { key: 'close_date',  label: 'Close Date',     required: false },
-  { key: 'close_price', label: 'Close Price ₹',  required: false },
-  { key: 'gross_pl',    label: 'Gross P&L ₹',   required: false },
-  { key: 'charges',     label: 'Charges ₹',      required: false },
-  { key: 'net_income',  label: 'Net Income ₹',   required: false },
-  { key: 'risk_reward', label: 'Risk/Reward',     required: false },
-  // Notes
-  { key: 'notes',       label: 'Notes/Remarks',  required: false },
+  { key: 'scrip_name',   label: 'Scrip Name',    required: true,  desc: 'Stock ticker or instrument name (e.g. RELIANCE, NIFTY25000CE)' },
+  { key: 'segment',      label: 'Segment',        required: true,  desc: 'EQUITY, COMMODITY, or F&O' },
+  { key: 'direction',    label: 'Direction',      required: true,  desc: 'LONG (buy) or SHORT (sell). Also accepts BUY/SELL or B/S' },
+  { key: 'entry_date',   label: 'Entry Date',     required: true,  desc: 'Trade entry date. Accepts YYYY-MM-DD, DD-MMM-YYYY, DD-MMM-YY, DD/MM/YYYY' },
+  { key: 'entry_price',  label: 'Entry Price ₹',  required: true,  desc: 'Price per share/unit at entry' },
+  { key: 'quantity',     label: 'Quantity',        required: true,  desc: 'Number of shares, units, or lots' },
+  { key: 'stop_loss',    label: 'Stop Loss ₹',    required: false, desc: 'Stop-loss price level. Used to auto-calculate Initial Risk and Target' },
+  { key: 'target',       label: 'Target ₹',       required: false, desc: 'Target price. Auto-calculated as entry ± 2× SL distance if not provided' },
+  { key: 'initial_risk', label: 'Initial Risk ₹', required: false, desc: 'Risk in ₹ (= |entry − SL| × qty). Auto-calculated if Stop Loss is provided' },
+  { key: 'legs',         label: 'Legs (F&O)',      required: false, desc: 'Number of lots/legs for F&O trades. Used for brokerage (₹130 per leg)' },
+  { key: 'close_date',   label: 'Close Date',     required: false, desc: 'Date you exited the trade (same formats as Entry Date)' },
+  { key: 'close_price',  label: 'Close Price ₹',  required: false, desc: 'Price per share/unit at exit' },
+  { key: 'gross_pl',     label: 'Gross P&L ₹',    required: false, desc: 'Auto-calculated from entry/exit prices and quantity' },
+  { key: 'charges',      label: 'Charges ₹',      required: false, desc: 'Auto-calculated: Equity 0.11%, Commodity 0.02%, F&O ₹130/leg' },
+  { key: 'net_income',   label: 'Net Income ₹',   required: false, desc: 'Gross P&L minus charges. Auto-calculated' },
+  { key: 'risk_reward',  label: 'Risk/Reward',     required: false, desc: 'Net Income ÷ Initial Risk ratio. Auto-calculated' },
+  { key: 'notes',        label: 'Notes/Remarks',  required: false, desc: 'Any trade notes, logic, or comments' },
 ]
 
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
@@ -535,15 +542,27 @@ function ImportModal({
 
         {/* ── Upload phase ── */}
         {phase === 'upload' && (
-          <div
-            onClick={() => fileRef.current?.click()}
-            className="border-2 border-dashed border-gray-700 hover:border-blue-500/50 rounded-lg p-10 text-center cursor-pointer transition-colors"
-          >
-            <input ref={fileRef} type="file" accept=".csv" className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
-            <div className="text-3xl mb-3">📂</div>
-            <div className="text-sm text-gray-400">Click to select your CSV file</div>
-            <div className="text-xs text-gray-600 mt-1">Columns are auto-detected and mapped</div>
+          <div className="space-y-3">
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="border-2 border-dashed border-gray-700 hover:border-blue-500/50 rounded-lg p-10 text-center cursor-pointer transition-colors"
+            >
+              <input ref={fileRef} type="file" accept=".csv" className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
+              <div className="text-3xl mb-3">📂</div>
+              <div className="text-sm text-gray-400">Click to select your CSV file</div>
+              <div className="text-xs text-gray-600 mt-1">Columns are auto-detected and mapped</div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-600">Don't have the right format?</span>
+              <button
+                onClick={async (e) => { e.stopPropagation(); await tradesApi.downloadSampleCsv(portfolioId) }}
+                className="text-xs text-blue-400 hover:text-blue-300 border border-blue-400/30 hover:border-blue-400/60 rounded px-3 py-1.5 transition-colors"
+              >
+                ↓ Download Sample CSV
+              </button>
+            </div>
           </div>
         )}
 
@@ -614,9 +633,10 @@ function ImportModal({
               <div className="grid grid-cols-2 gap-2">
                 {IMPORT_FIELDS.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-[10px] text-gray-600 mb-0.5">
+                    <label className="flex items-center gap-1 text-[10px] text-gray-600 mb-0.5">
                       {field.label}
-                      {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                      {field.required && <span className="text-red-400">*</span>}
+                      <span title={field.desc} className="text-gray-600 hover:text-gray-300 cursor-help leading-none">ⓘ</span>
                     </label>
                     <select
                       value={mapping[field.key] ?? ''}
@@ -838,6 +858,14 @@ export default function Trades() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-gray-100">Trade Log</h1>
         <div className="flex items-center gap-2">
+          {trades.length > 0 && portfolioId && (
+            <button
+              onClick={() => tradesApi.exportCsv(portfolioId)}
+              className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded transition-colors"
+            >
+              ↓ Export CSV
+            </button>
+          )}
           <button onClick={() => setModal('import')}
             className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded transition-colors">
             Import CSV
