@@ -7,7 +7,7 @@ from portfolio.models import Portfolio
 from .models import Trade
 from .serializers import TradeSerializer, CloseTradeSerializer
 from .filters import TradeFilter
-import csv, io
+import csv, io, os, json
 from datetime import datetime, date as date_type
 from decimal import Decimal, ROUND_HALF_UP
 from django.http import HttpResponse
@@ -530,3 +530,129 @@ def export_csv(request, portfolio_id):
             t.notes,
         ])
     return response
+
+
+def build_trade_context(portfolio_id, user):
+    try:
+        portfolio = Portfolio.objects.get(id=portfolio_id, user=user)
+    except Portfolio.DoesNotExist:
+        return None, "Portfolio not found"
+
+    all_qs    = Trade.objects.filter(portfolio=portfolio)
+    closed_qs = all_qs.exclude(close_date__isnull=True, close_price__isnull=True).filter(net_income__isnull=False)
+    open_qs   = all_qs.filter(close_date__isnull=True, close_price__isnull=True)
+
+    closed_cnt = closed_qs.count()
+    profit_cnt = closed_qs.filter(net_income__gt=0).count()
+    win_rate   = round(profit_cnt / closed_cnt * 100, 2) if closed_cnt else 0
+
+    total_net_pnl   = float(closed_qs.aggregate(s=Sum('net_income'))['s'] or 0)
+    total_gross_pnl = float(closed_qs.aggregate(s=Sum('gross_pl'))['s'] or 0)
+    total_charges   = float(closed_qs.aggregate(s=Sum('charges'))['s'] or 0)
+
+    best  = closed_qs.order_by('-net_income').first()
+    worst = closed_qs.order_by('net_income').first()
+
+    def trade_summary(t):
+        if t is None:
+            return None
+        return {
+            'scrip_name': t.scrip_name,
+            'segment':    t.segment,
+            'direction':  t.direction,
+            'net_income': float(t.net_income),
+            'entry_date': str(t.entry_date),
+            'close_date': str(t.close_date) if t.close_date else None,
+        }
+
+    segment_breakdown = {}
+    for seg in ['EQUITY', 'COMMODITY', 'F_AND_O']:
+        seg_qs  = closed_qs.filter(segment=seg)
+        seg_cnt = seg_qs.count()
+        seg_win = seg_qs.filter(net_income__gt=0).count()
+        segment_breakdown[seg] = {
+            'total_trades': seg_cnt,
+            'win_rate':     round(seg_win / seg_cnt * 100, 2) if seg_cnt else 0,
+            'net_pnl':      float(seg_qs.aggregate(s=Sum('net_income'))['s'] or 0),
+        }
+
+    recent_trades = []
+    for t in closed_qs.order_by('-close_date')[:10]:
+        recent_trades.append({
+            'scrip_name':  t.scrip_name,
+            'segment':     t.segment,
+            'direction':   t.direction,
+            'entry_date':  str(t.entry_date),
+            'entry_price': float(t.entry_price)  if t.entry_price  is not None else None,
+            'quantity':    float(t.quantity)     if t.quantity     is not None else None,
+            'close_date':  str(t.close_date)     if t.close_date   is not None else None,
+            'close_price': float(t.close_price)  if t.close_price  is not None else None,
+            'gross_pl':    float(t.gross_pl)     if t.gross_pl     is not None else None,
+            'charges':     float(t.charges)      if t.charges      is not None else None,
+            'net_income':  float(t.net_income)   if t.net_income   is not None else None,
+            'risk_reward': float(t.risk_reward)  if t.risk_reward  is not None else None,
+        })
+
+    context = {
+        'portfolio_name':          portfolio.name,
+        'currency':                portfolio.currency,
+        'starting_capital':        float(portfolio.starting_capital),
+        'summary': {
+            'total_trades':        all_qs.count(),
+            'closed_trades':       closed_cnt,
+            'open_trades':         open_qs.count(),
+            'win_rate_percent':    win_rate,
+            'total_net_pnl':       total_net_pnl,
+            'total_gross_pnl':     total_gross_pnl,
+            'total_charges':       total_charges,
+        },
+        'best_trade':              trade_summary(best),
+        'worst_trade':             trade_summary(worst),
+        'segment_breakdown':       segment_breakdown,
+        'recent_10_closed_trades': recent_trades,
+    }
+    return context, None
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def trade_chat(request, portfolio_id):
+    user_message = (request.data.get('message') or '').strip()
+    if not user_message:
+        return Response({'error': 'message is required'}, status=400)
+
+    context_data, error = build_trade_context(portfolio_id, request.user)
+    if error:
+        return Response({'error': error}, status=404)
+
+    try:
+        from google import genai
+        from google.genai import types
+        from decouple import config as decouple_config
+        client = genai.Client(api_key=decouple_config('GEMINI_API_KEY'))
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}\n\nUser Question: {user_message}",
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    'You are a personal trading assistant for a trader using TradeDesk, '
+                    'a trading journal app for Indian markets. You will be given the portfolio '
+                    'data as JSON context. Answer only from this data — do not invent trades or '
+                    'numbers. Reply in the same language the user writes in (Hindi, English, or '
+                    'Hinglish). Use Indian currency format with the rupee symbol. Be concise and '
+                    'direct. If asked about something not in the context say so honestly.'
+                ),
+                max_output_tokens=1024,
+            ),
+        )
+        return Response({
+            'reply': response.text,
+            'tokens_used': {
+                'input':  response.usage_metadata.prompt_token_count,
+                'output': response.usage_metadata.candidates_token_count,
+            },
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({'error': str(e), 'type': type(e).__name__}, status=503)

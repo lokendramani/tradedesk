@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .views import trade_chat
 
 urlpatterns = [
     path('<uuid:portfolio_id>/trades/',
@@ -26,4 +27,6 @@ urlpatterns = [
          views.monthly_pnl, name='monthly-pnl'),
     path('<uuid:portfolio_id>/stats/closed-months/',
          views.closed_months, name='closed-months'),
+    path('<uuid:portfolio_id>/trades/chat/',
+         trade_chat, name='trade-chat'),
 ]

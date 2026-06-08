@@ -271,3 +271,48 @@ pdfplumber==0.11.4        # CAS PDF parsing
 - Pagination is set to 50 items per page but the frontend does not render
   paginator controls — it reads `res.data.data || res.data.results || res.data`.
 - `Pillow` is installed but not used anywhere visible.
+
+---
+
+## AI CHAT FEATURE
+
+**Status:** Implemented
+
+**Overview:** A floating chat assistant that lets users ask natural language questions about their own trade data. The backend fetches live trade data from the DB, builds a context dict, and sends it along with the user's question to the Gemini API. The frontend renders a fixed bottom-right chat widget.
+
+### New files added
+- `frontend/src/components/TradeChatBot.tsx` — floating chat widget component
+
+### Modified files
+- `backend/requirements.txt` — added `google-genai>=1.0.0`
+- `backend/trades/views.py` — added `build_trade_context()` helper and `trade_chat` view at the bottom
+- `backend/trades/urls.py` — added `path('chat/', trade_chat, name='trade-chat')`
+- `frontend/src/components/Layout.tsx` — imports and renders `TradeChatBot`
+
+### Environment variables required
+- `GEMINI_API_KEY` — get from aistudio.google.com, add to `backend/.env`
+
+### API endpoint
+- `POST /api/portfolios/<portfolio_id>/trades/chat/`
+- Request body: `{ "message": "user question here" }`
+- Response: `{ "reply": "...", "tokens_used": { "input": N, "output": N } }`
+- Auth: JWT required (same as all other endpoints)
+
+### SDK used
+`google-genai` (new unified SDK, `from google import genai`). Do not use the legacy `google-generativeai` package — it reached end-of-life November 2025.
+
+### Model used
+`gemini-2.0-flash`
+Reason: Fast, sufficient for trade Q&A, and has a free tier on Google AI Studio.
+
+### Context sent to Gemini per request
+- Portfolio name, currency, starting capital
+- Summary stats: total trades, win rate, net P&L, charges
+- Best and worst trade by net_income
+- Segment breakdown for EQUITY, COMMODITY, F_AND_O
+- Last 10 closed trades with full details
+
+### Future migration plan (n8n)
+When migrating to n8n for multi-tool orchestration, only 3 lines change in `trade_chat` view — replace the Gemini client call with `requests.post(N8N_WEBHOOK_URL, json=payload)`. The `build_trade_context()` function, all URL routing, and the entire React component stay identical. React never knows whether Gemini is called directly or through n8n.
+
+--- END AI CHAT FEATURE ---
