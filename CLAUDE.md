@@ -302,8 +302,8 @@ pdfplumber==0.11.4        # CAS PDF parsing
 `google-genai` (new unified SDK, `from google import genai`). Do not use the legacy `google-generativeai` package — it reached end-of-life November 2025.
 
 ### Model used
-`gemini-2.0-flash`
-Reason: Fast, sufficient for trade Q&A, and has a free tier on Google AI Studio.
+`gemini-2.5-flash` with fallback to `gemini-2.0-flash` and `gemini-1.5-flash` on 503 errors
+Reason: Fast, sufficient for trade Q&A, and has a free tier on Google AI Studio. Fallback chain ensures availability when a model is overloaded.
 
 ### Context sent to Gemini per request
 - Portfolio name, currency, starting capital

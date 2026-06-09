@@ -7,7 +7,7 @@ from portfolio.models import Portfolio
 from .models import Trade
 from .serializers import TradeSerializer, CloseTradeSerializer
 from .filters import TradeFilter
-import csv, io, os, json
+import csv, io, os, json, logging
 from datetime import datetime, date as date_type
 from decimal import Decimal, ROUND_HALF_UP
 from django.http import HttpResponse
@@ -625,34 +625,47 @@ def trade_chat(request, portfolio_id):
     if error:
         return Response({'error': error}, status=404)
 
-    try:
-        from google import genai
-        from google.genai import types
-        from decouple import config as decouple_config
-        client = genai.Client(api_key=decouple_config('GEMINI_API_KEY'))
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}\n\nUser Question: {user_message}",
-            config=types.GenerateContentConfig(
-                system_instruction=(
-                    'You are a personal trading assistant for a trader using TradeDesk, '
-                    'a trading journal app for Indian markets. You will be given the portfolio '
-                    'data as JSON context. Answer only from this data — do not invent trades or '
-                    'numbers. Reply in the same language the user writes in (Hindi, English, or '
-                    'Hinglish). Use Indian currency format with the rupee symbol. Be concise and '
-                    'direct. If asked about something not in the context say so honestly.'
+    from google import genai
+    from google.genai import types
+    from decouple import config as decouple_config
+
+    _GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    _logger = logging.getLogger(__name__)
+    _api_key = decouple_config('GEMINI_API_KEY')
+    _contents = f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}\n\nUser Question: {user_message}"
+    _system_instruction = (
+        'You are a personal trading assistant for a trader using TradeDesk, '
+        'a trading journal app for Indian markets. You will be given the portfolio '
+        'data as JSON context. Answer only from this data — do not invent trades or '
+        'numbers. Reply in the same language the user writes in (Hindi, English, or '
+        'Hinglish). Use Indian currency format with the rupee symbol. Be concise and '
+        'direct. If asked about something not in the context say so honestly.'
+    )
+
+    for model_name in _GEMINI_MODELS:
+        try:
+            client = genai.Client(api_key=_api_key)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=_contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=_system_instruction,
+                    max_output_tokens=1024,
                 ),
-                max_output_tokens=1024,
-            ),
-        )
-        return Response({
-            'reply': response.text,
-            'tokens_used': {
-                'input':  response.usage_metadata.prompt_token_count,
-                'output': response.usage_metadata.candidates_token_count,
-            },
-        })
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return Response({'error': str(e), 'type': type(e).__name__}, status=503)
+            )
+            return Response({
+                'reply': response.text,
+                'tokens_used': {
+                    'input':  response.usage_metadata.prompt_token_count,
+                    'output': response.usage_metadata.candidates_token_count,
+                },
+                'model_used': model_name,
+            })
+        except Exception as e:
+            err_str = str(e)
+            if '503' in err_str or 'UNAVAILABLE' in err_str:
+                _logger.warning('Gemini model %s unavailable: %s — trying next.', model_name, err_str)
+                continue
+            return Response({'error': err_str, 'type': type(e).__name__}, status=503)
+
+    return Response({'error': 'All Gemini models are currently unavailable.'}, status=503)
