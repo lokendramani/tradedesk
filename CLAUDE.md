@@ -294,23 +294,35 @@ pdfplumber==0.11.4        # CAS PDF parsing
 
 ### API endpoint
 - `POST /api/portfolios/<portfolio_id>/trades/chat/`
-- Request body: `{ "message": "user question here" }`
-- Response: `{ "reply": "...", "tokens_used": { "input": N, "output": N } }`
+- Request body: `{ "message": "user question here", "history": [{ "role": "user"|"model", "text": "..." }, ...] }`
+- Response: `{ "reply": "...", "tokens_used": { "input": N, "output": N }, "model_used": "..." }`
 - Auth: JWT required (same as all other endpoints)
 
 ### SDK used
 `google-genai` (new unified SDK, `from google import genai`). Do not use the legacy `google-generativeai` package — it reached end-of-life November 2025.
 
 ### Model used
-`gemini-2.5-flash` with fallback to `gemini-2.0-flash` and `gemini-1.5-flash` on 503 errors
-Reason: Fast, sufficient for trade Q&A, and has a free tier on Google AI Studio. Fallback chain ensures availability when a model is overloaded.
+`gemini-2.5-flash-lite` with fallback to `gemini-2.5-flash` and `gemini-3.5-flash` on 503/UNAVAILABLE errors.
+`model_used` field in response tells you which model actually answered.
+
+### Session memory (multi-turn)
+The frontend maintains a `messages` array and sends all previous turns as `history` on every request. The backend builds a Gemini multi-turn `contents` list (plain dicts `{"role", "parts"}` — do NOT use `types.Content`/`types.Part` constructors, they behave inconsistently). The portfolio context is always re-fetched from DB for freshness and prepended to the first user turn in the conversation.
 
 ### Context sent to Gemini per request
+- `today` — current date (ISO format) so the model can resolve "this month", "this week", etc.
 - Portfolio name, currency, starting capital
 - Summary stats: total trades, win rate, net P&L, charges
 - Best and worst trade by net_income
 - Segment breakdown for EQUITY, COMMODITY, F_AND_O
-- Last 10 closed trades with full details
+- `monthly_pnl` — net P&L, trade count, win rate keyed by `YYYY-MM` for every month
+- `all_closed_trades` — every closed trade (full detail), sorted newest first
+- `all_open_trades` — every open trade (entry detail + stop_loss + notes)
+
+### Chat widget UX
+- Toggle button (bottom-right) is hidden while the panel is open — panel has its own × close button.
+
+### CSV import fix
+- Row filter changed to accept any non-empty row (was incorrectly requiring first column to be a pure integer, which broke the sample CSV and most real-world CSVs).
 
 ### Future migration plan (n8n)
 When migrating to n8n for multi-tool orchestration, only 3 lines change in `trade_chat` view — replace the Gemini client call with `requests.post(N8N_WEBHOOK_URL, json=payload)`. The `build_trade_context()` function, all URL routing, and the entire React component stay identical. React never knows whether Gemini is called directly or through n8n.

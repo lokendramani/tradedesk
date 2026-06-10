@@ -576,24 +576,52 @@ def build_trade_context(portfolio_id, user):
             'net_pnl':      float(seg_qs.aggregate(s=Sum('net_income'))['s'] or 0),
         }
 
-    recent_trades = []
-    for t in closed_qs.order_by('-close_date')[:10]:
-        recent_trades.append({
+    def _trade_row(t, include_close=True):
+        row = {
             'scrip_name':  t.scrip_name,
             'segment':     t.segment,
             'direction':   t.direction,
             'entry_date':  str(t.entry_date),
-            'entry_price': float(t.entry_price)  if t.entry_price  is not None else None,
-            'quantity':    float(t.quantity)     if t.quantity     is not None else None,
-            'close_date':  str(t.close_date)     if t.close_date   is not None else None,
-            'close_price': float(t.close_price)  if t.close_price  is not None else None,
-            'gross_pl':    float(t.gross_pl)     if t.gross_pl     is not None else None,
-            'charges':     float(t.charges)      if t.charges      is not None else None,
-            'net_income':  float(t.net_income)   if t.net_income   is not None else None,
-            'risk_reward': float(t.risk_reward)  if t.risk_reward  is not None else None,
-        })
+            'entry_price': float(t.entry_price) if t.entry_price is not None else None,
+            'quantity':    float(t.quantity)    if t.quantity    is not None else None,
+            'stop_loss':   float(t.stop_loss)   if t.stop_loss   is not None else None,
+            'notes':       t.notes or None,
+        }
+        if include_close:
+            row.update({
+                'close_date':  str(t.close_date)  if t.close_date  is not None else None,
+                'close_price': float(t.close_price) if t.close_price is not None else None,
+                'gross_pl':    float(t.gross_pl)    if t.gross_pl    is not None else None,
+                'charges':     float(t.charges)     if t.charges     is not None else None,
+                'net_income':  float(t.net_income)  if t.net_income  is not None else None,
+                'risk_reward': float(t.risk_reward) if t.risk_reward is not None else None,
+            })
+        return row
+
+    all_closed_trades = [_trade_row(t) for t in closed_qs.order_by('-close_date')]
+    all_open_trades   = [_trade_row(t, include_close=False) for t in open_qs.order_by('-entry_date')]
+
+    monthly_raw = {}
+    for t in closed_qs.values('close_date', 'net_income'):
+        if t['close_date'] and t['net_income'] is not None:
+            key = str(t['close_date'])[:7]  # YYYY-MM
+            if key not in monthly_raw:
+                monthly_raw[key] = {'net_pnl': 0.0, 'trades': 0, 'wins': 0}
+            monthly_raw[key]['net_pnl']  += float(t['net_income'])
+            monthly_raw[key]['trades']   += 1
+            if t['net_income'] > 0:
+                monthly_raw[key]['wins'] += 1
+    monthly_pnl = {
+        k: {
+            'net_pnl':  round(v['net_pnl'], 2),
+            'trades':   v['trades'],
+            'win_rate': round(v['wins'] / v['trades'] * 100, 2) if v['trades'] else 0,
+        }
+        for k, v in sorted(monthly_raw.items())
+    }
 
     context = {
+        'today':                   str(date_type.today()),
         'portfolio_name':          portfolio.name,
         'currency':                portfolio.currency,
         'starting_capital':        float(portfolio.starting_capital),
@@ -609,7 +637,9 @@ def build_trade_context(portfolio_id, user):
         'best_trade':              trade_summary(best),
         'worst_trade':             trade_summary(worst),
         'segment_breakdown':       segment_breakdown,
-        'recent_10_closed_trades': recent_trades,
+        'monthly_pnl':             monthly_pnl,
+        'all_closed_trades':       all_closed_trades,
+        'all_open_trades':         all_open_trades,
     }
     return context, None
 
@@ -632,7 +662,24 @@ def trade_chat(request, portfolio_id):
     _GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash','gemini-3.5-flash']
     _logger = logging.getLogger(__name__)
     _api_key = decouple_config('GEMINI_API_KEY')
-    _contents = f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}\n\nUser Question: {user_message}"
+
+    history = request.data.get('history', [])
+    _context_str = f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}"
+
+    def _turn(role, text):
+        return {"role": role, "parts": [{"text": text}]}
+
+    if not history:
+        _contents = [_turn("user", f"{_context_str}\n\nUser Question: {user_message}")]
+    else:
+        _contents = []
+        for i, turn in enumerate(history):
+            text = turn.get('text', '')
+            if i == 0 and turn.get('role') == 'user':
+                text = f"{_context_str}\n\nUser Question: {text}"
+            _contents.append(_turn(turn['role'], text))
+        _contents.append(_turn("user", user_message))
+
     _system_instruction = (
         'You are a personal trading assistant for a trader using TradeDesk, '
         'a trading journal app for Indian markets. You will be given the portfolio '

@@ -74,7 +74,10 @@ export default function TradeChatBot({ portfolioId }: Props) {
     setIsLoading(true)
 
     try {
-      const res = await apiClient.post(`/portfolios/${portfolioId}/trades/chat/`, { message: msg })
+      const history = messages
+        .filter((m) => m.id !== 'welcome')
+        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', text: m.content }))
+      const res = await apiClient.post(`/portfolios/${portfolioId}/trades/chat/`, { message: msg, history })
       const reply = res.data?.reply ?? 'Koi response nahi mila.'
       setMessages((prev) => [
         ...prev,
