@@ -629,7 +629,7 @@ def trade_chat(request, portfolio_id):
     from google.genai import types
     from decouple import config as decouple_config
 
-    _GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    _GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash','gemini-3.5-flash']
     _logger = logging.getLogger(__name__)
     _api_key = decouple_config('GEMINI_API_KEY')
     _contents = f"Portfolio Data (JSON):\n{json.dumps(context_data, indent=2)}\n\nUser Question: {user_message}"
