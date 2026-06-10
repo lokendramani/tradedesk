@@ -106,39 +106,39 @@ export default function TradeChatBot({ portfolioId }: Props) {
     <>
       <style>{BOUNCE_STYLE}</style>
 
-      {/* Toggle button */}
-      <button
-        onClick={() => setIsOpen((o) => !o)}
-        aria-label="Toggle chat"
-        style={{
-          position:       'fixed',
-          bottom:         '24px',
-          right:          '24px',
-          width:          '52px',
-          height:         '52px',
-          borderRadius:   '50%',
-          background:     C.accent,
-          border:         'none',
-          cursor:         'pointer',
-          zIndex:         9999,
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'center',
-          boxShadow:      '0 4px 20px rgba(83,74,183,0.5)',
-          transform:      isOpen ? 'rotate(8deg) scale(0.95)' : 'rotate(0deg) scale(1)',
-          transition:     'transform 0.2s ease, box-shadow 0.2s ease',
-        }}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-            stroke="#fff"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
+      {/* Toggle button — hidden while panel is open (panel has its own × close) */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          aria-label="Open chat"
+          style={{
+            position:       'fixed',
+            bottom:         '24px',
+            right:          '24px',
+            width:          '52px',
+            height:         '52px',
+            borderRadius:   '50%',
+            background:     C.accent,
+            border:         'none',
+            cursor:         'pointer',
+            zIndex:         9999,
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'center',
+            boxShadow:      '0 4px 20px rgba(83,74,183,0.5)',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+              stroke="#fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
 
       {/* Chat window */}
       {isOpen && (
