@@ -538,77 +538,65 @@ def build_trade_context(portfolio_id, user):
     except Portfolio.DoesNotExist:
         return None, "Portfolio not found"
 
-    all_qs    = Trade.objects.filter(portfolio=portfolio)
-    closed_qs = all_qs.exclude(close_date__isnull=True, close_price__isnull=True).filter(net_income__isnull=False)
-    open_qs   = all_qs.filter(close_date__isnull=True, close_price__isnull=True)
+    # Single query — all trades for this portfolio
+    all_trades = list(Trade.objects.filter(portfolio=portfolio).values(
+        'scrip_name', 'segment', 'direction',
+        'entry_date', 'entry_price', 'quantity', 'stop_loss', 'notes',
+        'close_date', 'close_price', 'gross_pl', 'charges', 'net_income', 'risk_reward',
+    ))
 
-    closed_cnt = closed_qs.count()
-    profit_cnt = closed_qs.filter(net_income__gt=0).count()
-    win_rate   = round(profit_cnt / closed_cnt * 100, 2) if closed_cnt else 0
+    # Split in Python — no more DB calls
+    closed = [t for t in all_trades if t['close_date'] is not None and t['net_income'] is not None]
+    open_  = [t for t in all_trades if t['close_date'] is None and t['close_price'] is None]
 
-    total_net_pnl   = float(closed_qs.aggregate(s=Sum('net_income'))['s'] or 0)
-    total_gross_pnl = float(closed_qs.aggregate(s=Sum('gross_pl'))['s'] or 0)
-    total_charges   = float(closed_qs.aggregate(s=Sum('charges'))['s'] or 0)
+    def _f(v):
+        return float(v) if v is not None else None
 
-    best  = closed_qs.order_by('-net_income').first()
-    worst = closed_qs.order_by('net_income').first()
+    # Summary stats
+    closed_cnt      = len(closed)
+    profit_cnt      = sum(1 for t in closed if (t['net_income'] or 0) > 0)
+    win_rate        = round(profit_cnt / closed_cnt * 100, 2) if closed_cnt else 0
+    total_net_pnl   = round(sum(_f(t['net_income']) or 0 for t in closed), 2)
+    total_gross_pnl = round(sum(_f(t['gross_pl'])   or 0 for t in closed), 2)
+    total_charges   = round(sum(_f(t['charges'])    or 0 for t in closed), 2)
+
+    # Best / worst trade
+    best  = max(closed, key=lambda t: _f(t['net_income']) or 0, default=None)
+    worst = min(closed, key=lambda t: _f(t['net_income']) or 0, default=None)
 
     def trade_summary(t):
         if t is None:
             return None
         return {
-            'scrip_name': t.scrip_name,
-            'segment':    t.segment,
-            'direction':  t.direction,
-            'net_income': float(t.net_income),
-            'entry_date': str(t.entry_date),
-            'close_date': str(t.close_date) if t.close_date else None,
+            'scrip_name': t['scrip_name'],
+            'segment':    t['segment'],
+            'direction':  t['direction'],
+            'net_income': _f(t['net_income']),
+            'entry_date': str(t['entry_date']),
+            'close_date': str(t['close_date']) if t['close_date'] else None,
         }
 
+    # Segment breakdown
     segment_breakdown = {}
     for seg in ['EQUITY', 'COMMODITY', 'F_AND_O']:
-        seg_qs  = closed_qs.filter(segment=seg)
-        seg_cnt = seg_qs.count()
-        seg_win = seg_qs.filter(net_income__gt=0).count()
+        seg_trades = [t for t in closed if t['segment'] == seg]
+        seg_cnt    = len(seg_trades)
+        seg_win    = sum(1 for t in seg_trades if (t['net_income'] or 0) > 0)
         segment_breakdown[seg] = {
             'total_trades': seg_cnt,
             'win_rate':     round(seg_win / seg_cnt * 100, 2) if seg_cnt else 0,
-            'net_pnl':      float(seg_qs.aggregate(s=Sum('net_income'))['s'] or 0),
+            'net_pnl':      round(sum(_f(t['net_income']) or 0 for t in seg_trades), 2),
         }
 
-    def _trade_row(t, include_close=True):
-        row = {
-            'scrip_name':  t.scrip_name,
-            'segment':     t.segment,
-            'direction':   t.direction,
-            'entry_date':  str(t.entry_date),
-            'entry_price': float(t.entry_price) if t.entry_price is not None else None,
-            'quantity':    float(t.quantity)    if t.quantity    is not None else None,
-            'stop_loss':   float(t.stop_loss)   if t.stop_loss   is not None else None,
-            'notes':       t.notes or None,
-        }
-        if include_close:
-            row.update({
-                'close_date':  str(t.close_date)  if t.close_date  is not None else None,
-                'close_price': float(t.close_price) if t.close_price is not None else None,
-                'gross_pl':    float(t.gross_pl)    if t.gross_pl    is not None else None,
-                'charges':     float(t.charges)     if t.charges     is not None else None,
-                'net_income':  float(t.net_income)  if t.net_income  is not None else None,
-                'risk_reward': float(t.risk_reward) if t.risk_reward is not None else None,
-            })
-        return row
-
-    all_closed_trades = [_trade_row(t) for t in closed_qs.order_by('-close_date')]
-    all_open_trades   = [_trade_row(t, include_close=False) for t in open_qs.order_by('-entry_date')]
-
+    # Monthly P&L
     monthly_raw = {}
-    for t in closed_qs.values('close_date', 'net_income'):
+    for t in closed:
         if t['close_date'] and t['net_income'] is not None:
             key = str(t['close_date'])[:7]  # YYYY-MM
             if key not in monthly_raw:
                 monthly_raw[key] = {'net_pnl': 0.0, 'trades': 0, 'wins': 0}
-            monthly_raw[key]['net_pnl']  += float(t['net_income'])
-            monthly_raw[key]['trades']   += 1
+            monthly_raw[key]['net_pnl'] += _f(t['net_income'])
+            monthly_raw[key]['trades']  += 1
             if t['net_income'] > 0:
                 monthly_raw[key]['wins'] += 1
     monthly_pnl = {
@@ -620,26 +608,50 @@ def build_trade_context(portfolio_id, user):
         for k, v in sorted(monthly_raw.items())
     }
 
+    # Full trade lists sorted by date descending
+    all_closed_trades = [
+        {
+            'scrip_name':  t['scrip_name'],  'segment':    t['segment'],
+            'direction':   t['direction'],   'entry_date': str(t['entry_date']),
+            'entry_price': _f(t['entry_price']), 'quantity': _f(t['quantity']),
+            'stop_loss':   _f(t['stop_loss']),   'notes':    t['notes'] or None,
+            'close_date':  str(t['close_date']) if t['close_date'] else None,
+            'close_price': _f(t['close_price']), 'gross_pl':   _f(t['gross_pl']),
+            'charges':     _f(t['charges']),     'net_income': _f(t['net_income']),
+            'risk_reward': _f(t['risk_reward']),
+        }
+        for t in sorted(closed, key=lambda t: t['close_date'] or date_type.min, reverse=True)
+    ]
+    all_open_trades = [
+        {
+            'scrip_name':  t['scrip_name'],  'segment':    t['segment'],
+            'direction':   t['direction'],   'entry_date': str(t['entry_date']),
+            'entry_price': _f(t['entry_price']), 'quantity': _f(t['quantity']),
+            'stop_loss':   _f(t['stop_loss']),   'notes':    t['notes'] or None,
+        }
+        for t in sorted(open_, key=lambda t: t['entry_date'] or date_type.min, reverse=True)
+    ]
+
     context = {
-        'today':                   str(date_type.today()),
-        'portfolio_name':          portfolio.name,
-        'currency':                portfolio.currency,
-        'starting_capital':        float(portfolio.starting_capital),
+        'today':            str(date_type.today()),
+        'portfolio_name':   portfolio.name,
+        'currency':         portfolio.currency,
+        'starting_capital': float(portfolio.starting_capital),
         'summary': {
-            'total_trades':        all_qs.count(),
-            'closed_trades':       closed_cnt,
-            'open_trades':         open_qs.count(),
-            'win_rate_percent':    win_rate,
-            'total_net_pnl':       total_net_pnl,
-            'total_gross_pnl':     total_gross_pnl,
-            'total_charges':       total_charges,
+            'total_trades':     len(all_trades),
+            'closed_trades':    closed_cnt,
+            'open_trades':      len(open_),
+            'win_rate_percent': win_rate,
+            'total_net_pnl':    total_net_pnl,
+            'total_gross_pnl':  total_gross_pnl,
+            'total_charges':    total_charges,
         },
-        'best_trade':              trade_summary(best),
-        'worst_trade':             trade_summary(worst),
-        'segment_breakdown':       segment_breakdown,
-        'monthly_pnl':             monthly_pnl,
-        'all_closed_trades':       all_closed_trades,
-        'all_open_trades':         all_open_trades,
+        'best_trade':        trade_summary(best),
+        'worst_trade':       trade_summary(worst),
+        'segment_breakdown': segment_breakdown,
+        'monthly_pnl':       monthly_pnl,
+        'all_closed_trades': all_closed_trades,
+        'all_open_trades':   all_open_trades,
     }
     return context, None
 
