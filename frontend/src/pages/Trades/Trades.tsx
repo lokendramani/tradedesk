@@ -440,7 +440,7 @@ function ImportModal({
       const hdrs = extractHeaders(allRows[0])
       const idxMap: Record<string, number> = {}
       allRows[0].forEach((h, i) => { idxMap[h.trim()] = i })
-      const rows = allRows.slice(1).filter((row) => /^\d+$/.test(row[0]?.trim() ?? ''))
+      const rows = allRows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''))
       setHeaders(hdrs)
       setColIndex(idxMap)
       setDataRows(rows)
