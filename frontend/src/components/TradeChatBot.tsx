@@ -27,18 +27,18 @@ const QUICK_CHIPS = [
   'Open positions?',
 ]
 
-// App colors (matches the Tailwind dark theme used throughout)
+// App colors (matches the light design system)
 const C = {
-  bgPrimary:   '#030712',   // gray-950
-  bgSecondary: '#111827',   // gray-900
-  bgTertiary:  '#1f2937',   // gray-800
-  border:      '#1e2330',
-  textPrimary: '#f3f4f6',   // gray-100
-  textMuted:   '#9ca3af',   // gray-400
-  textDim:     '#6b7280',   // gray-500
-  accent:      '#534AB7',
-  accentText:  '#EEEDFE',
-  green:       '#10b981',
+  bgPrimary:   '#FFFFFF',
+  bgSecondary: '#F4F6F9',
+  bgTertiary:  '#F4F6F9',
+  border:      '#E5E9F0',
+  textPrimary: '#1A1F2B',
+  textMuted:   '#8A93A6',
+  textDim:     '#8A93A6',
+  accent:      '#4C6FFF',
+  accentText:  '#FFFFFF',
+  green:       '#2ECC91',
 }
 
 const BOUNCE_STYLE = `
@@ -128,7 +128,7 @@ export default function TradeChatBot({ portfolioId }: Props) {
             display:        'flex',
             alignItems:     'center',
             justifyContent: 'center',
-            boxShadow:      '0 4px 20px rgba(83,74,183,0.5)',
+            boxShadow:      '0 4px 20px rgba(76,111,255,0.3)',
           }}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -158,7 +158,7 @@ export default function TradeChatBot({ portfolioId }: Props) {
             border:        `1px solid ${C.border}`,
             display:       'flex',
             flexDirection: 'column',
-            boxShadow:     '0 16px 48px rgba(0,0,0,0.7)',
+            boxShadow:     '0 8px 32px rgba(0,0,0,0.12)',
             overflow:      'hidden',
           }}
         >

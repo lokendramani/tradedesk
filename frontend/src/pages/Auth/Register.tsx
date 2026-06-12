@@ -67,155 +67,91 @@ export default function Register() {
     }
   }
 
-  const inputClass = `w-full bg-gray-800 border border-gray-700
-    rounded-lg px-4 py-3 text-sm text-gray-100
-    placeholder-gray-600
-    focus:outline-none focus:border-blue-500 transition-colors`
+  const inputClass = `w-full bg-white border border-surface-border rounded-lg px-4 py-3 text-sm text-neutral-primary
+    placeholder-neutral-muted focus:outline-none focus:border-brand transition-colors`
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 font-mono flex items-center justify-center py-10">
+    <div className="min-h-screen bg-surface-page flex items-center justify-center py-10">
       <div className="w-full max-w-sm">
 
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-100">
-            Trade<span className="text-blue-400">Desk</span>
+          <h1 className="font-display text-3xl font-bold text-neutral-primary">
+            Trade<span className="text-brand">Desk</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-2">Create your account</p>
+          <p className="text-neutral-muted text-sm mt-2">Create your account</p>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8">
-          <h2 className="text-lg font-semibold text-gray-100 mb-6">Register</h2>
+        <div className="bg-white border border-surface-border rounded-xl p-8 shadow-sm">
+          <h2 className="text-lg font-display font-semibold text-neutral-primary mb-6">Register</h2>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30
-                            text-red-400 text-sm rounded-lg px-4 py-3 mb-4">
+            <div className="bg-loss-bg border border-loss-border text-loss-text text-sm rounded-lg px-4 py-3 mb-4">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Full Name */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                className={inputClass}
-                placeholder="Your full name"
-              />
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Full Name</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
+                required className={inputClass} placeholder="Your full name" />
             </div>
 
-            {/* Email */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className={inputClass}
-                placeholder="you@email.com"
-              />
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                required className={inputClass} placeholder="you@email.com" />
             </div>
 
-            {/* Password */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Password
-              </label>
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Password</label>
               <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
+                <input type={showPassword ? 'text' : 'password'} value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className={`${inputClass} pr-11`}
-                  placeholder="••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-200 transition-colors"
-                  tabIndex={-1}
-                >
+                  required className={`${inputClass} pr-11`} placeholder="••••••" />
+                <button type="button" onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-muted hover:text-neutral-primary transition-colors"
+                  tabIndex={-1}>
                   <EyeIcon open={showPassword} />
                 </button>
               </div>
             </div>
 
-            {/* Confirm Password */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Confirm Password
-              </label>
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Confirm Password</label>
               <div className="relative">
-                <input
-                  type={showConfirm ? 'text' : 'password'}
-                  value={confirmPassword}
+                <input type={showConfirm ? 'text' : 'password'} value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className={`${inputClass} pr-11`}
-                  placeholder="••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm((v) => !v)}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-200 transition-colors"
-                  tabIndex={-1}
-                >
+                  required className={`${inputClass} pr-11`} placeholder="••••••" />
+                <button type="button" onClick={() => setShowConfirm((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-muted hover:text-neutral-primary transition-colors"
+                  tabIndex={-1}>
                   <EyeIcon open={showConfirm} />
                 </button>
               </div>
             </div>
 
-            {/* Starting Capital */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Starting Capital ₹
-              </label>
-              <input
-                type="number"
-                value={capital}
-                onChange={(e) => setCapital(e.target.value)}
-                className={inputClass}
-                placeholder="800000"
-              />
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Starting Capital ₹</label>
+              <input type="number" value={capital} onChange={(e) => setCapital(e.target.value)}
+                className={`${inputClass} font-mono`} placeholder="800000" />
             </div>
 
-            {/* Worst Case */}
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-                Worst Case ₹
-              </label>
-              <input
-                type="number"
-                value={worstCase}
-                onChange={(e) => setWorstCase(e.target.value)}
-                className={inputClass}
-                placeholder="560000"
-              />
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Worst Case ₹</label>
+              <input type="number" value={worstCase} onChange={(e) => setWorstCase(e.target.value)}
+                className={`${inputClass} font-mono`} placeholder="560000" />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500
-                         text-white font-semibold rounded-lg py-3
-                         text-sm transition-colors disabled:opacity-50 mt-2"
-            >
+            <button type="submit" disabled={loading}
+              className="w-full bg-brand hover:bg-brand/90 text-white font-semibold rounded-lg py-3 text-sm transition-colors disabled:opacity-50 mt-2">
               {loading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-neutral-muted mt-6">
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-400 hover:underline">
+            <Link to="/login" className="text-brand hover:underline">
               Sign in
             </Link>
           </p>

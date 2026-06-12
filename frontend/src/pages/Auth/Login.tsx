@@ -49,31 +49,30 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 font-mono flex items-center justify-center">
+    <div className="min-h-screen bg-surface-page flex items-center justify-center">
       <div className="w-full max-w-sm">
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-100">
-            Trade<span className="text-blue-400">Desk</span>
+          <h1 className="font-display text-3xl font-bold text-neutral-primary">
+            Trade<span className="text-brand">Desk</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-2">Trading Journal</p>
+          <p className="text-neutral-muted text-sm mt-2">Trading Journal</p>
         </div>
 
         {/* Card */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8">
-          <h2 className="text-lg font-semibold text-gray-100 mb-6">Sign In</h2>
+        <div className="bg-white border border-surface-border rounded-xl p-8 shadow-sm">
+          <h2 className="text-lg font-display font-semibold text-neutral-primary mb-6">Sign In</h2>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30
-                            text-red-400 text-sm rounded-lg px-4 py-3 mb-4">
+            <div className="bg-loss-bg border border-loss-border text-loss-text text-sm rounded-lg px-4 py-3 mb-4">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">
                 Email
               </label>
               <input
@@ -81,17 +80,14 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-gray-800 border border-gray-700
-                           rounded-lg px-4 py-3 text-sm text-gray-100
-                           placeholder-gray-600
-                           focus:outline-none focus:border-blue-500
-                           transition-colors"
+                className="w-full bg-white border border-surface-border rounded-lg px-4 py-3 text-sm text-neutral-primary
+                           placeholder-neutral-muted focus:outline-none focus:border-brand transition-colors"
                 placeholder="you@email.com"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">
+              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">
                 Password
               </label>
               <input
@@ -99,11 +95,8 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full bg-gray-800 border border-gray-700
-                           rounded-lg px-4 py-3 text-sm text-gray-100
-                           placeholder-gray-600
-                           focus:outline-none focus:border-blue-500
-                           transition-colors"
+                className="w-full bg-white border border-surface-border rounded-lg px-4 py-3 text-sm text-neutral-primary
+                           placeholder-neutral-muted focus:outline-none focus:border-brand transition-colors"
                 placeholder="••••••"
               />
             </div>
@@ -111,17 +104,15 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500
-                         text-white font-semibold rounded-lg py-3
-                         text-sm transition-colors disabled:opacity-50 mt-2"
+              className="w-full bg-brand hover:bg-brand/90 text-white font-semibold rounded-lg py-3 text-sm transition-colors disabled:opacity-50 mt-2"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-neutral-muted mt-6">
             Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-blue-400 hover:underline">
+            <Link to="/register" className="text-brand hover:underline">
               Register
             </Link>
           </p>

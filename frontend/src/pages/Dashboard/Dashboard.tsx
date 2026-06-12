@@ -17,19 +17,40 @@ const SEG_LABELS: Record<Segment, string> = {
 }
 
 // ── Stat card ────────────────────────────────────────────────────────────────
+type CardVariant = 'default' | 'profit' | 'loss'
+
+const CARD_STYLES: Record<CardVariant, { card: string; label: string; value: string }> = {
+  default: {
+    card:  'bg-white border border-surface-border',
+    label: 'text-neutral-muted',
+    value: 'text-neutral-primary',
+  },
+  profit: {
+    card:  'bg-profit-bg border border-profit-border',
+    label: 'text-profit-label',
+    value: 'text-profit-text',
+  },
+  loss: {
+    card:  'bg-loss-bg border border-loss-border',
+    label: 'text-neutral-muted',
+    value: 'text-loss-text',
+  },
+}
+
 function StatCard({
-  label, value, sub, valueClass,
+  label, value, sub, variant = 'default',
 }: {
   label: string
   value: string | number
   sub?: string
-  valueClass?: string
+  variant?: CardVariant
 }) {
+  const s = CARD_STYLES[variant]
   return (
-    <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-      <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">{label}</div>
-      <div className={`text-xl font-bold font-mono ${valueClass ?? 'text-gray-100'}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-600 mt-1">{sub}</div>}
+    <div className={`${s.card} rounded-lg p-4`}>
+      <div className={`text-[11px] ${s.label} uppercase tracking-wide mb-2`}>{label}</div>
+      <div className={`text-2xl font-mono font-medium ${s.value}`}>{value}</div>
+      {sub && <div className="text-xs text-neutral-muted mt-1">{sub}</div>}
     </div>
   )
 }
@@ -38,10 +59,10 @@ function StatCard({
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; name?: string }[]; label?: string }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-gray-900 border border-[#1e2330] rounded-lg px-3 py-2 text-xs font-mono">
-      <div className="text-gray-400 mb-1">{label}</div>
+    <div className="bg-white border border-surface-border rounded-lg px-3 py-2 text-xs font-mono shadow-sm">
+      <div className="text-neutral-muted mb-1">{label}</div>
       {payload.map((p, i) => (
-        <div key={i} className={p.value >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+        <div key={i} className={p.value >= 0 ? 'text-profit-text' : 'text-loss-text'}>
           {p.name ? `${p.name}: ` : ''}{formatCurrency(p.value)}
         </div>
       ))}
@@ -53,19 +74,18 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 export default function Dashboard() {
   const { portfolioId } = useAuthStore()
 
-  const [segment,     setSegment]     = useState<Segment>('Overall')
-  const [year,        setYear]        = useState<number | undefined>()
-  const [month,       setMonth]       = useState<number | undefined>()
+  const [segment,      setSegment]      = useState<Segment>('Overall')
+  const [year,         setYear]         = useState<number | undefined>()
+  const [month,        setMonth]        = useState<number | undefined>()
   const [closedMonths, setClosedMonths] = useState<string[]>([])
-  const [portfolio,   setPortfolio]   = useState<Portfolio | null>(null)
+  const [portfolio,    setPortfolio]    = useState<Portfolio | null>(null)
 
-  const [stats,       setStats]       = useState<Stats | null>(null)
-  const [equity,      setEquity]      = useState<EquityPoint[]>([])
-  const [monthly,     setMonthly]     = useState<MonthlyPnl[]>([])
-  const [segStats,    setSegStats]    = useState<Record<string, Stats | null>>({})
-  const [loading,     setLoading]     = useState(true)
+  const [stats,    setStats]    = useState<Stats | null>(null)
+  const [equity,   setEquity]   = useState<EquityPoint[]>([])
+  const [monthly,  setMonthly]  = useState<MonthlyPnl[]>([])
+  const [segStats, setSegStats] = useState<Record<string, Stats | null>>({})
+  const [loading,  setLoading]  = useState(true)
 
-  // Load closed months and portfolio on mount
   useEffect(() => {
     if (!portfolioId) return
     tradesApi.getClosedMonths(portfolioId).then(setClosedMonths).catch(() => {})
@@ -75,7 +95,6 @@ export default function Dashboard() {
     }).catch(() => {})
   }, [portfolioId])
 
-  // Load stats + charts when filter changes
   const load = useCallback(async () => {
     if (!portfolioId) return
     setLoading(true)
@@ -90,7 +109,6 @@ export default function Dashboard() {
       setEquity(Array.isArray(eq) ? eq : [])
       setMonthly(Array.isArray(mp) ? mp : [])
 
-      // Load per-segment stats for bar chart (always overall filters for comparison)
       const [eqStat, comStat, fnoStat] = await Promise.all([
         tradesApi.getStats(portfolioId, 'EQUITY').catch(() => null),
         tradesApi.getStats(portfolioId, 'COMMODITY').catch(() => null),
@@ -104,7 +122,6 @@ export default function Dashboard() {
 
   useEffect(() => { load() }, [load])
 
-  // Parse closed months for filter dropdown
   const monthOptions = closedMonths.map((m) => {
     const [y, mo] = m.split('-').map(Number)
     return { value: m, label: new Date(y, mo - 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' }), y, mo }
@@ -116,7 +133,6 @@ export default function Dashboard() {
     if (opt) { setYear(opt.y); setMonth(opt.mo) }
   }
 
-  // Derived values
   const worstCaseBuffer = stats && portfolio
     ? (parseFloat(stats.current_capital ?? stats.starting_capital) - portfolio.worst_case_capital)
     : null
@@ -142,31 +158,34 @@ export default function Dashboard() {
 
   const donutData = stats
     ? [
-        { name: 'Profit', value: stats.trade_in_profit },
-        { name: 'Loss',   value: stats.trade_in_loss   },
+        { name: 'Profit',    value: stats.trade_in_profit },
+        { name: 'Loss',      value: stats.trade_in_loss   },
         { name: 'Break-even', value: Math.max(0, stats.closed_trades - stats.trade_in_profit - stats.trade_in_loss) },
       ].filter((d) => d.value > 0)
     : []
 
-  const DONUT_COLORS = ['#00e5a0', '#ff4560', '#5a6480']
+  const DONUT_COLORS = ['#2ECC91', '#FF6B6B', '#8A93A6']
+
+  const winRate = parseFloat(stats?.win_rate ?? '0')
+  const netIncome = stats?.total_net_income ?? '0'
 
   return (
     <div className="p-6 space-y-6">
 
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold text-gray-100">Dashboard</h1>
+        <h1 className="text-xl font-display font-bold text-neutral-primary">Dashboard</h1>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Segment filter */}
-          <div className="flex items-center bg-gray-900 border border-[#1e2330] rounded-lg p-1 gap-1">
+          <div className="flex items-center bg-surface-page border border-surface-border rounded-lg p-1 gap-1">
             {SEGMENTS.map((s) => (
               <button
                 key={s}
                 onClick={() => setSegment(s)}
                 className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
                   segment === s
-                    ? 'bg-blue-600 text-white font-semibold'
-                    : 'text-gray-400 hover:text-gray-200'
+                    ? 'bg-brand text-white font-semibold'
+                    : 'text-neutral-muted hover:text-neutral-primary'
                 }`}
               >
                 {SEG_LABELS[s]}
@@ -176,7 +195,7 @@ export default function Dashboard() {
           {/* Month filter */}
           <select
             onChange={(e) => handleMonthChange(e.target.value)}
-            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+            className="bg-white border border-surface-border text-neutral-primary text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brand"
           >
             <option value="">All Time</option>
             {monthOptions.map((o) => (
@@ -184,7 +203,7 @@ export default function Dashboard() {
             ))}
           </select>
           {loading && (
-            <span className="text-xs text-gray-600 animate-pulse">Loading...</span>
+            <span className="text-xs text-neutral-muted animate-pulse">Loading...</span>
           )}
         </div>
       </div>
@@ -192,52 +211,41 @@ export default function Dashboard() {
       {/* Stats grid */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-          <StatCard label="Total Trades"     value={stats.total_trades}  />
-          <StatCard label="Closed"           value={stats.closed_trades} />
-          <StatCard label="Open"             value={stats.open_trades}   />
+          <StatCard label="Total Trades"  value={stats.total_trades}  />
+          <StatCard label="Closed"        value={stats.closed_trades} />
+          <StatCard label="Open"          value={stats.open_trades}   />
           <StatCard
             label="Win Rate"
             value={formatPercent(stats.win_rate)}
-            valueClass={parseFloat(stats.win_rate) >= 50 ? 'text-emerald-400' : 'text-red-400'}
+            variant={winRate >= 50 ? 'profit' : 'loss'}
           />
           <StatCard
             label="Net Income"
-            value={formatCurrency(stats.total_net_income)}
-            valueClass={isProfit(stats.total_net_income) ? 'text-emerald-400' : isLoss(stats.total_net_income) ? 'text-red-400' : 'text-gray-100'}
+            value={formatCurrency(netIncome)}
+            variant={isProfit(netIncome) ? 'profit' : isLoss(netIncome) ? 'loss' : 'default'}
           />
-          <StatCard
-            label="Avg Profit"
-            value={formatCurrency(stats.avg_profit)}
-            valueClass="text-emerald-400"
-          />
-          <StatCard
-            label="Avg Loss"
-            value={formatCurrency(stats.avg_loss)}
-            valueClass="text-red-400"
-          />
+          <StatCard label="Avg Profit"  value={formatCurrency(stats.avg_profit)}   variant="profit" />
+          <StatCard label="Avg Loss"    value={formatCurrency(stats.avg_loss)}     variant="loss"   />
           <StatCard
             label="Avg / Trade"
             value={formatCurrency(stats.avg_per_trade)}
-            valueClass={isProfit(stats.avg_per_trade) ? 'text-emerald-400' : isLoss(stats.avg_per_trade) ? 'text-red-400' : 'text-gray-100'}
+            variant={isProfit(stats.avg_per_trade) ? 'profit' : isLoss(stats.avg_per_trade) ? 'loss' : 'default'}
           />
           <StatCard
             label="Actual R:R"
             value={stats.actual_rr ? `${parseFloat(stats.actual_rr).toFixed(2)}x` : '—'}
-            valueClass={parseFloat(stats.actual_rr) >= 1 ? 'text-emerald-400' : 'text-red-400'}
+            variant={parseFloat(stats.actual_rr) >= 1 ? 'profit' : 'loss'}
           />
-          <StatCard
-            label="Breakeven Acc."
-            value={formatPercent(stats.breakeven_accuracy)}
-          />
+          <StatCard label="Breakeven Acc." value={formatPercent(stats.breakeven_accuracy)} />
           <StatCard
             label="Current Capital"
             value={formatCurrency(stats.current_capital ?? stats.starting_capital)}
-            valueClass={isProfit(stats.total_net_income) ? 'text-emerald-400' : 'text-gray-100'}
+            variant={isProfit(netIncome) ? 'profit' : 'default'}
           />
           <StatCard
             label="Worst Case Buffer"
             value={worstCaseBuffer !== null ? formatCurrency(worstCaseBuffer) : '—'}
-            valueClass={worstCaseBuffer !== null && worstCaseBuffer >= 0 ? 'text-emerald-400' : 'text-red-400'}
+            variant={worstCaseBuffer !== null && worstCaseBuffer >= 0 ? 'profit' : 'loss'}
             sub={portfolio ? `Floor: ${formatCurrency(portfolio.worst_case_capital)}` : undefined}
           />
         </div>
@@ -246,35 +254,35 @@ export default function Dashboard() {
       {/* Charts row 1: Equity curve + Win/Loss donut */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Equity curve */}
-        <div className="lg:col-span-2 bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">Equity Curve</div>
+        <div className="lg:col-span-2 bg-white border border-surface-border rounded-lg p-4">
+          <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider mb-4">Equity Curve</div>
           {equityData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={equityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" />
-                <XAxis dataKey="date" tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} />
-                <YAxis tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F6" />
+                <XAxis dataKey="date" tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} />
+                <YAxis tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="capital"
-                  stroke="#3b82f6"
+                  stroke="#4C6FFF"
                   strokeWidth={2}
                   dot={false}
-                  activeDot={{ r: 4, fill: '#3b82f6' }}
+                  activeDot={{ r: 4, fill: '#4C6FFF' }}
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[220px] text-gray-600 text-sm">
+            <div className="flex items-center justify-center h-[220px] text-neutral-muted text-sm">
               No equity data yet
             </div>
           )}
         </div>
 
         {/* Win/Loss donut */}
-        <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">Trade Outcomes</div>
+        <div className="bg-white border border-surface-border rounded-lg p-4">
+          <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider mb-4">Trade Outcomes</div>
           {donutData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
@@ -293,18 +301,18 @@ export default function Dashboard() {
                 </Pie>
                 <Tooltip
                   formatter={(v, name) => [v ?? 0, name ?? '']}
-                  contentStyle={{ background: '#111318', border: '1px solid #1e2330', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }}
-                  itemStyle={{ color: '#e8eaf0' }}
+                  contentStyle={{ background: '#FFFFFF', border: '1px solid #E5E9F0', borderRadius: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                  itemStyle={{ color: '#1A1F2B' }}
                 />
                 <Legend
                   iconType="circle"
                   iconSize={8}
-                  formatter={(value) => <span style={{ color: '#5a6480', fontSize: 11 }}>{value}</span>}
+                  formatter={(value) => <span style={{ color: '#8A93A6', fontSize: 11 }}>{value}</span>}
                 />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[220px] text-gray-600 text-sm">
+            <div className="flex items-center justify-center h-[220px] text-neutral-muted text-sm">
               No closed trades yet
             </div>
           )}
@@ -314,41 +322,41 @@ export default function Dashboard() {
       {/* Charts row 2: Monthly P&L + Segment performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Monthly P&L */}
-        <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">Monthly P&amp;L</div>
+        <div className="bg-white border border-surface-border rounded-lg p-4">
+          <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider mb-4">Monthly P&amp;L</div>
           {monthlyData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={monthlyData} barSize={18}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} />
-                <YAxis tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F6" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} />
+                <YAxis tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="pnl" name="Net P&L" radius={[3, 3, 0, 0]}>
                   {monthlyData.map((entry, i) => (
-                    <Cell key={i} fill={entry.pnl >= 0 ? '#00e5a0' : '#ff4560'} />
+                    <Cell key={i} fill={entry.pnl >= 0 ? '#2ECC91' : '#FF6B6B'} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[200px] text-gray-600 text-sm">
+            <div className="flex items-center justify-center h-[200px] text-neutral-muted text-sm">
               No monthly data yet
             </div>
           )}
         </div>
 
         {/* Segment performance */}
-        <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">Segment Performance</div>
+        <div className="bg-white border border-surface-border rounded-lg p-4">
+          <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider mb-4">Segment Performance</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={segBarData} barSize={28}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} />
-              <YAxis tick={{ fill: '#5a6480', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F6" vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} />
+              <YAxis tick={{ fill: '#8A93A6', fontSize: 10 }} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<ChartTooltip />} />
               <Bar dataKey="pnl" name="Net P&L" radius={[3, 3, 0, 0]}>
                 {segBarData.map((entry, i) => (
-                  <Cell key={i} fill={entry.pnl >= 0 ? '#00e5a0' : '#ff4560'} />
+                  <Cell key={i} fill={entry.pnl >= 0 ? '#2ECC91' : '#FF6B6B'} />
                 ))}
               </Bar>
             </BarChart>

@@ -16,24 +16,29 @@ const SEG_LABELS: Record<Segment, string> = {
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-gray-900 border border-[#1e2330] rounded-lg px-3 py-2 text-xs font-mono">
-      <div className="text-gray-400 mb-1">{label}</div>
-      <div className={payload[0].value >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+    <div className="bg-white border border-surface-border rounded-lg px-3 py-2 text-xs font-mono shadow-sm">
+      <div className="text-neutral-muted mb-1">{label}</div>
+      <div className={payload[0].value >= 0 ? 'text-profit-text' : 'text-loss-text'}>
         {formatCurrency(payload[0].value)}
       </div>
     </div>
   )
 }
 
-function StatCard({
-  label, value, valueClass,
-}: {
-  label: string; value: string | number; valueClass?: string
-}) {
+type CardVariant = 'default' | 'profit' | 'loss'
+
+const CARD_STYLES: Record<CardVariant, { card: string; label: string; value: string }> = {
+  default: { card: 'bg-white border border-surface-border', label: 'text-neutral-muted', value: 'text-neutral-primary' },
+  profit:  { card: 'bg-profit-bg border border-profit-border', label: 'text-profit-label', value: 'text-profit-text' },
+  loss:    { card: 'bg-loss-bg border border-loss-border', label: 'text-neutral-muted', value: 'text-loss-text' },
+}
+
+function StatCard({ label, value, variant = 'default' }: { label: string; value: string | number; variant?: CardVariant }) {
+  const s = CARD_STYLES[variant]
   return (
-    <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-4">
-      <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">{label}</div>
-      <div className={`text-lg font-bold font-mono ${valueClass ?? 'text-gray-100'}`}>{value}</div>
+    <div className={`${s.card} rounded-lg p-4`}>
+      <div className={`text-[11px] ${s.label} uppercase tracking-wide mb-2`}>{label}</div>
+      <div className={`text-xl font-mono font-medium ${s.value}`}>{value}</div>
     </div>
   )
 }
@@ -85,18 +90,21 @@ export default function Segments() {
     capital: parseFloat(e.capital),
   }))
 
+  const winRate  = parseFloat(stats?.win_rate ?? '0')
+  const netIncome = stats?.total_net_income ?? '0'
+
   return (
     <div className="p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold text-gray-100">Segments</h1>
+        <h1 className="text-xl font-display font-bold text-neutral-primary">Segments</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          {loading && <span className="text-xs text-gray-600 animate-pulse">Loading...</span>}
+          {loading && <span className="text-xs text-neutral-muted animate-pulse">Loading...</span>}
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+            className="bg-white border border-surface-border text-neutral-primary text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brand"
           >
             <option value="">All Time</option>
             {monthOptions.map((o) => (
@@ -114,8 +122,8 @@ export default function Segments() {
             onClick={() => setSegment(s)}
             className={`px-4 py-2 rounded-lg text-sm font-mono font-semibold transition-colors border ${
               segment === s
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-gray-900 text-gray-400 border-[#1e2330] hover:border-gray-600 hover:text-gray-200'
+                ? 'bg-brand text-white border-brand'
+                : 'bg-white text-neutral-muted border-surface-border hover:border-neutral-muted hover:text-neutral-primary'
             }`}
           >
             {SEG_LABELS[s]}
@@ -132,63 +140,44 @@ export default function Segments() {
           <StatCard
             label="Win Rate"
             value={formatPercent(stats.win_rate)}
-            valueClass={parseFloat(stats.win_rate) >= 50 ? 'text-emerald-400' : 'text-red-400'}
+            variant={winRate >= 50 ? 'profit' : 'loss'}
           />
           <StatCard
             label="Net Income"
-            value={formatCurrency(stats.total_net_income)}
-            valueClass={isProfit(stats.total_net_income) ? 'text-emerald-400' : isLoss(stats.total_net_income) ? 'text-red-400' : 'text-gray-100'}
+            value={formatCurrency(netIncome)}
+            variant={isProfit(netIncome) ? 'profit' : isLoss(netIncome) ? 'loss' : 'default'}
           />
-          <StatCard
-            label="Avg Profit"
-            value={formatCurrency(stats.avg_profit)}
-            valueClass="text-emerald-400"
-          />
-          <StatCard
-            label="Avg Loss"
-            value={formatCurrency(stats.avg_loss)}
-            valueClass="text-red-400"
-          />
+          <StatCard label="Avg Profit"  value={formatCurrency(stats.avg_profit)} variant="profit" />
+          <StatCard label="Avg Loss"    value={formatCurrency(stats.avg_loss)}   variant="loss"   />
           <StatCard
             label="Avg / Trade"
             value={formatCurrency(stats.avg_per_trade)}
-            valueClass={isProfit(stats.avg_per_trade) ? 'text-emerald-400' : isLoss(stats.avg_per_trade) ? 'text-red-400' : 'text-gray-100'}
+            variant={isProfit(stats.avg_per_trade) ? 'profit' : isLoss(stats.avg_per_trade) ? 'loss' : 'default'}
           />
           <StatCard
             label="Actual R:R"
             value={stats.actual_rr ? `${parseFloat(stats.actual_rr).toFixed(2)}x` : '—'}
-            valueClass={parseFloat(stats.actual_rr) >= 1 ? 'text-emerald-400' : 'text-red-400'}
+            variant={parseFloat(stats.actual_rr) >= 1 ? 'profit' : 'loss'}
           />
-          <StatCard
-            label="Breakeven Acc."
-            value={formatPercent(stats.breakeven_accuracy)}
-          />
-          <StatCard
-            label="Profit Trades"
-            value={stats.trade_in_profit}
-            valueClass="text-emerald-400"
-          />
-          <StatCard
-            label="Loss Trades"
-            value={stats.trade_in_loss}
-            valueClass="text-red-400"
-          />
+          <StatCard label="Breakeven Acc." value={formatPercent(stats.breakeven_accuracy)} />
+          <StatCard label="Profit Trades"  value={stats.trade_in_profit} variant="profit" />
+          <StatCard label="Loss Trades"    value={stats.trade_in_loss}   variant="loss"   />
         </div>
       )}
 
       {/* Equity curve for selected segment */}
-      <div className="bg-gray-900 border border-[#1e2330] rounded-lg p-5">
+      <div className="bg-white border border-surface-border rounded-lg p-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-xs text-gray-500 uppercase tracking-widest">
+          <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider">
             {month ? 'Monthly P&L Curve' : 'Equity Curve'} — {SEG_LABELS[segment]}
             {month && (
-              <span className="ml-2 text-gray-600">
+              <span className="ml-2 text-neutral-muted/60">
                 ({monthOptions.find((o) => o.value === month)?.label ?? month})
               </span>
             )}
           </div>
           {month && (
-            <div className="text-[10px] text-gray-600">
+            <div className="text-[10px] text-neutral-muted">
               Relative to start of period — starts at ₹0
             </div>
           )}
@@ -196,15 +185,15 @@ export default function Segments() {
         {equityData.length > 0 ? (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={equityData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F6" />
               <XAxis
                 dataKey="date"
-                tick={{ fill: '#5a6480', fontSize: 10 }}
+                tick={{ fill: '#8A93A6', fontSize: 10 }}
                 tickLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fill: '#5a6480', fontSize: 10 }}
+                tick={{ fill: '#8A93A6', fontSize: 10 }}
                 tickLine={false}
                 tickFormatter={(v) => {
                   const abs = Math.abs(v)
@@ -213,19 +202,19 @@ export default function Segments() {
                 width={65}
               />
               <Tooltip content={<ChartTooltip />} />
-              {month && <ReferenceLine y={0} stroke="#5a6480" strokeDasharray="4 4" />}
+              {month && <ReferenceLine y={0} stroke="#8A93A6" strokeDasharray="4 4" />}
               <Line
                 type="monotone"
                 dataKey="capital"
-                stroke="#3b82f6"
+                stroke="#4C6FFF"
                 strokeWidth={2}
                 dot={equityData.length <= 20}
-                activeDot={{ r: 4, fill: '#3b82f6' }}
+                activeDot={{ r: 4, fill: '#4C6FFF' }}
               />
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <div className="flex items-center justify-center h-[280px] text-gray-600 text-sm">
+          <div className="flex items-center justify-center h-[280px] text-neutral-muted text-sm">
             {loading ? 'Loading...' : `No ${SEG_LABELS[segment].toLowerCase()} trades closed yet`}
           </div>
         )}

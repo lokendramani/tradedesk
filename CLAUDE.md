@@ -328,3 +328,74 @@ The frontend maintains a `messages` array and sends all previous turns as `histo
 When migrating to n8n for multi-tool orchestration, only 3 lines change in `trade_chat` view — replace the Gemini client call with `requests.post(N8N_WEBHOOK_URL, json=payload)`. The `build_trade_context()` function, all URL routing, and the entire React component stay identical. React never knows whether Gemini is called directly or through n8n.
 
 --- END AI CHAT FEATURE ---
+
+---
+
+## UI Design System
+
+**Status:** Implemented (Issue #5 — light theme refresh)
+
+### Color Tokens (`tailwind.config.js`)
+
+| Token | Value | Usage |
+|---|---|---|
+| `brand` / `brand-DEFAULT` | `#4C6FFF` | Primary accent — buttons, links, active states, chart lines |
+| `surface-page` | `#F4F6F9` | Page background |
+| `surface-card` | `#FFFFFF` | Card / modal backgrounds |
+| `surface-border` | `#E5E9F0` | All borders (cards, inputs, tables, dividers) |
+| `neutral-primary` | `#1A1F2B` | Primary text |
+| `neutral-muted` | `#8A93A6` | Secondary text, labels, placeholders |
+| `profit-bg` | `#ECFBF4` | Profit card background |
+| `profit-border` | `#CFF3E3` | Profit card border |
+| `profit-text` | `#0E7A53` | Profit value text |
+| `profit-label` | `#189A6B` | Profit card label text |
+| `profit-chart` | `#2ECC91` | Profit bars / positive chart elements |
+| `loss-bg` | `#FFF3F3` | Loss card background |
+| `loss-border` | `#FAD8D8` | Loss card border |
+| `loss-text` | `#C24545` | Loss value text |
+| `loss-chart` | `#FF6B6B` | Loss bars / negative chart elements |
+
+### Font Families
+
+| Tailwind class | Family | Use |
+|---|---|---|
+| `font-display` | Space Grotesk | Page titles (`<h1>`), section headers, modal titles, logo wordmark |
+| `font-mono` | JetBrains Mono | All numeric values — prices, P&L, quantities, percentages, R:R, stat card values |
+
+Google Fonts loaded in `index.html`. Both families fall back gracefully if unavailable.
+
+### StatCard Variants
+
+StatCard accepts `variant?: 'default' | 'profit' | 'loss'`:
+- **default** — white bg, `surface-border`, `neutral-primary` value
+- **profit** — `profit-bg`, `profit-border`, `profit-text` value, `profit-label` label
+- **loss** — `loss-bg`, `loss-border`, `loss-text` value
+
+Apply `profit` to: Avg Profit, Win Rate ≥50%, Net Income > 0, Current Capital (when profitable), Peak Capital.
+Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst Case Buffer (when negative).
+
+### Sidebar
+
+- **Collapsed**: 60px wide, icons only (lucide-react), centered.
+- **Expanded**: 220px wide, icons + labels side by side.
+- **Toggle**: ChevronLeft/ChevronRight button at top of sidebar.
+- **State persistence**: `localStorage.getItem/setItem('sidebar_collapsed')`.
+- **Active item**: `bg-brand/5 text-brand border-l-2 border-brand rounded-l-none`.
+- **Inactive item**: `text-neutral-muted hover:bg-surface-page`.
+- **Transition**: `transition-all duration-200` on the `<aside>` width.
+- **Bottom**: user initials avatar (bg-brand/10) + LogOut icon. Full name/email/text shown only when expanded.
+
+### Chart Colors (Recharts)
+
+| Element | Color |
+|---|---|
+| Line / area stroke | `#4C6FFF` |
+| Area fill opacity | 0.06 |
+| Profit bars | `#2ECC91` |
+| Loss bars | `#FF6B6B` |
+| Neutral / break-even | `#8A93A6` |
+| CartesianGrid stroke | `#EEF1F6` |
+| Axis tick fill | `#8A93A6` |
+| Tooltip bg | `#FFFFFF`, border `#E5E9F0` |
+
+--- END UI DESIGN SYSTEM ---
