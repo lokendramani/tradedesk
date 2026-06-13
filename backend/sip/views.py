@@ -237,11 +237,15 @@ def holdings(request):
 
     result.sort(key=lambda x: x['invested'], reverse=True)
 
+    last_snap = SIPWeeklySnapshot.objects.filter(user=request.user).order_by('-week_date').first()
+    fresh_invested = float(last_snap.cumulative_fresh) if last_snap else None
+
     return Response({
         'holdings':         result,
         'total_invested':   float(total_invested),
         'total_current':    float(total_current) if not any_missing else None,
         'has_stale_prices': any_missing or any(h['price_stale'] for h in result),
+        'fresh_invested':   fresh_invested,
     })
 
 

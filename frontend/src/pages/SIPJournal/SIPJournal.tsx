@@ -31,14 +31,19 @@ const CARD: Record<CardVariant, { card: string; label: string; value: string }> 
 }
 
 function StatCard({
-  label, value, sub, variant = 'default',
-}: { label: string; value: string; sub?: string; variant?: CardVariant }) {
+  label, value, sub, sub2, sub2Variant, variant = 'default',
+}: { label: string; value: string; sub?: string; sub2?: string; sub2Variant?: 'profit' | 'loss' | 'muted'; variant?: CardVariant }) {
   const s = CARD[variant]
+  const sub2Class =
+    sub2Variant === 'profit' ? 'text-profit-text font-semibold' :
+    sub2Variant === 'loss'   ? 'text-loss-text font-semibold'   :
+    'text-neutral-muted'
   return (
     <div className={`${s.card} rounded-xl p-4`}>
       <div className={`text-xs uppercase tracking-wider font-medium mb-1.5 ${s.label}`}>{label}</div>
       <div className={`text-xl font-mono font-semibold ${s.value}`}>{value}</div>
-      {sub && <div className="text-xs text-neutral-muted mt-1">{sub}</div>}
+      {sub  && <div className="text-xs text-neutral-muted mt-1">{sub}</div>}
+      {sub2 && <div className={`text-xs mt-0.5 ${sub2Class}`}>{sub2}</div>}
     </div>
   )
 }
@@ -400,19 +405,97 @@ function BookedTable({ rows }: { rows: SIPBookedTicker[] }) {
   )
 }
 
+// ─── Weekly Cashflow Table ────────────────────────────────────────────────────
+
+function WeeklyCashflowTable({ data }: { data: SIPWeekPoint[] }) {
+  const [open, setOpen] = useState(false)
+  if (data.length === 0) return null
+
+  const totalBuy      = data.reduce((s, r) => s + r.weekly_buy, 0)
+  const totalRecycled = data.reduce((s, r) => s + r.exits_recycled, 0)
+  const totalFresh    = data.reduce((s, r) => s + r.fresh_cash, 0)
+  const lastCumFresh  = data[data.length - 1].cumulative_fresh
+
+  const fmtAmt = (v: number) =>
+    v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  return (
+    <div className="bg-white border border-surface-border rounded-xl">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <h2 className="font-display font-semibold text-neutral-primary">Weekly Cashflow</h2>
+        {open ? <ChevronDown size={16} className="text-neutral-muted" /> : <ChevronRight size={16} className="text-neutral-muted" />}
+      </button>
+
+      {open && (
+        <div className="overflow-x-auto border-t border-surface-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-page text-[11px] text-neutral-muted uppercase tracking-wider">
+                <th className="text-left px-4 py-3">Week</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">Weekly Buy (₹)</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">Exits Recycled (₹)</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">Fresh Cash (₹)</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">Cumulative Fresh (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row) => {
+                const hasRecycled = row.exits_recycled > 0
+                return (
+                  <tr
+                    key={row.week}
+                    className={`border-t border-surface-border ${hasRecycled ? 'bg-yellow-50' : 'hover:bg-surface-page/60'} transition-colors`}
+                  >
+                    <td className="px-4 py-2.5 font-mono text-xs text-neutral-primary">{row.week}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-primary">{fmtAmt(row.weekly_buy)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {hasRecycled
+                        ? <span className="text-yellow-700 font-semibold">{fmtAmt(row.exits_recycled)}</span>
+                        : <span className="text-neutral-muted">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-neutral-primary">{fmtAmt(row.fresh_cash)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-primary">{fmtAmt(row.cumulative_fresh)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-surface-page border-t-2 border-surface-border font-bold text-xs">
+                <td className="px-4 py-3 text-neutral-muted uppercase tracking-wider">Total</td>
+                <td className="px-4 py-3 text-right font-mono text-neutral-primary">{fmtAmt(totalBuy)}</td>
+                <td className="px-4 py-3 text-right font-mono text-yellow-700">{totalRecycled > 0 ? fmtAmt(totalRecycled) : '—'}</td>
+                <td className="px-4 py-3 text-right font-mono text-neutral-primary">{fmtAmt(totalFresh)}</td>
+                <td className="px-4 py-3 text-right font-mono text-brand">{fmtAmt(lastCumFresh)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Portfolio vs Invested Chart ──────────────────────────────────────────────
 
 function PortfolioChart({ data }: { data: SIPWeekPoint[] }) {
   if (data.length === 0) return null
 
   const formatted = data.map((d) => ({
-    week: d.week.slice(0, 7), // YYYY-MM
+    week:     d.week.slice(0, 7), // YYYY-MM
     invested: Math.round(d.cumulative_fresh),
     value:    d.portfolio_value != null ? Math.round(d.portfolio_value) : undefined,
+    n50:      d.n50_value   != null ? Math.round(d.n50_value)   : undefined,
+    n500:     d.n500_value  != null ? Math.round(d.n500_value)  : undefined,
   }))
 
+  const hasN50  = formatted.some((d) => d.n50  != null)
+  const hasN500 = formatted.some((d) => d.n500 != null)
+
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <ResponsiveContainer width="100%" height={260}>
       <LineChart data={formatted} margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F6" />
         <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#8A93A6', fontFamily: 'JetBrains Mono' }} />
@@ -425,8 +508,10 @@ function PortfolioChart({ data }: { data: SIPWeekPoint[] }) {
           formatter={(v) => fmtCurrency(typeof v === 'number' ? v : null)}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line type="monotone" dataKey="invested" name="Fresh Invested" stroke="#4C6FFF" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="value" name="Portfolio Value" stroke="#2ECC91" strokeWidth={2} dot={false} connectNulls />
+        <Line type="monotone" dataKey="invested" name="Fresh Invested"   stroke="#4C6FFF" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="value"    name="Portfolio Value"  stroke="#2ECC91" strokeWidth={2} dot={false} connectNulls />
+        {hasN50  && <Line type="monotone" dataKey="n50"  name="Nifty 50 (if invested)"  stroke="#F39C12" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />}
+        {hasN500 && <Line type="monotone" dataKey="n500" name="Nifty 500 (if invested)" stroke="#9B59B6" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />}
       </LineChart>
     </ResponsiveContainer>
   )
@@ -442,6 +527,7 @@ function SummaryCards({ s }: { s: SIPSummary }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
       <StatCard label="Fresh Invested" value={fmtCurrency(s.fresh_invested)} variant="default" />
       <StatCard label="Portfolio Value" value={fmtCurrency(s.portfolio_value)}
+        sub={`XIRR: ${fmtXirr(s.your_xirr)}`}
         variant={plVariant(s.unrealised_pl)} />
       <StatCard label="Unrealised P&L" value={fmtCurrency(s.unrealised_pl)}
         sub={fmtPct(s.portfolio_value && s.fresh_invested
@@ -451,14 +537,18 @@ function SummaryCards({ s }: { s: SIPSummary }) {
         variant={plVariant(s.booked_pl)} />
       <StatCard label="Your XIRR" value={fmtXirr(s.your_xirr)}
         sub="annualised" variant={plVariant(s.your_xirr)} />
-      <StatCard label="Alpha vs Nifty 50"
-        value={fmtAlpha(s.alpha_n50)}
-        sub={s.n50_xirr != null ? `N50: ${fmtXirr(s.n50_xirr)}` : undefined}
-        variant={plVariant(s.alpha_n50)} />
-      <StatCard label="Alpha vs Nifty 500"
-        value={fmtAlpha(s.alpha_n500)}
-        sub={s.n500_xirr != null ? `N500: ${fmtXirr(s.n500_xirr)}` : undefined}
-        variant={plVariant(s.alpha_n500)} />
+      <StatCard label="If in Nifty 50"
+        value={fmtCurrency(s.n50_portfolio_value)}
+        sub={s.n50_xirr != null ? `XIRR: ${fmtXirr(s.n50_xirr)}` : undefined}
+        sub2={s.alpha_n50 != null ? `You beat by ${fmtAlpha(s.alpha_n50)}` : undefined}
+        sub2Variant={s.alpha_n50 != null ? (s.alpha_n50 >= 0 ? 'profit' : 'loss') : undefined}
+        variant={plVariant(s.n50_xirr)} />
+      <StatCard label="If in Nifty 500"
+        value={fmtCurrency(s.n500_portfolio_value)}
+        sub={s.n500_xirr != null ? `XIRR: ${fmtXirr(s.n500_xirr)}` : undefined}
+        sub2={s.alpha_n500 != null ? `You beat by ${fmtAlpha(s.alpha_n500)}` : undefined}
+        sub2Variant={s.alpha_n500 != null ? (s.alpha_n500 >= 0 ? 'profit' : 'loss') : undefined}
+        variant={plVariant(s.n500_xirr)} />
     </div>
   )
 }
@@ -611,6 +701,11 @@ export default function SIPJournal() {
               <h2 className="font-display font-semibold text-neutral-primary mb-4">Portfolio Growth</h2>
               <PortfolioChart data={data.weekly_chart_data} />
             </div>
+          )}
+
+          {/* Weekly Cashflow Table */}
+          {data.weekly_chart_data.length > 0 && (
+            <WeeklyCashflowTable data={data.weekly_chart_data} />
           )}
 
           {/* Active Holdings */}

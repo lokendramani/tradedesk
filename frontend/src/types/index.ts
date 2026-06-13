@@ -120,6 +120,7 @@ export interface SIPHoldingsResponse {
   total_invested: number
   total_current: number | null
   has_stale_prices: boolean
+  fresh_invested: number | null
 }
 
 export interface SIPBookedTicker {
@@ -131,8 +132,13 @@ export interface SIPBookedTicker {
 
 export interface SIPWeekPoint {
   week: string
+  weekly_buy: number
+  exits_recycled: number
+  fresh_cash: number
   cumulative_fresh: number
   portfolio_value: number | null
+  n50_value: number | null
+  n500_value: number | null
 }
 
 export interface SIPSummary {
@@ -145,6 +151,8 @@ export interface SIPSummary {
   n500_xirr: number | null
   alpha_n50: number | null
   alpha_n500: number | null
+  n50_portfolio_value: number | null
+  n500_portfolio_value: number | null
   has_stale_prices: boolean
   benchmark_missing_weeks: number
 }

@@ -454,7 +454,7 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 | `models.py` | 4 models: SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache |
 | `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (accepted, not stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP column is silently ignored — live prices are batch-fetched from yfinance after import instead. After parsing, one batch SELECT against SIPETFMaster normalises etf_name for every ticker. Returns `(valid_rows, errors, open_tickers)` — `open_tickers` is the set of tickers for open-position rows, used by `upload_csv` to batch-fetch CMP in one yfinance call. |
 | `price_service.py` | yfinance fetch + per-day cache (SIPPriceCache). NSE equities append `.NS`; benchmarks use `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500). Cache is fresh-only: `is_stale=True` entries are treated as cache misses in both `batch_fetch_current` and `get_current_price`, so stale values are always overwritten by a live yfinance call. |
-| `calculations.py` | Full pipeline: `recalculate_for_user(user, fetch_prices=False)` — fresh-cash, holdings, booked P&L, weekly values, XIRR, benchmark XIRR. All snapshot writes use bulk_create(update_conflicts=True) + bulk_update — O(1) DB round-trips. |
+| `calculations.py` | Full pipeline: `recalculate_for_user(user, fetch_prices=False)` — fresh-cash, holdings, booked P&L, weekly values, XIRR, benchmark XIRR + benchmark weekly portfolio values. All snapshot writes use bulk_create(update_conflicts=True) + bulk_update — O(1) DB round-trips. |
 | `views.py` | 8 function-based views (see endpoints below) |
 | `urls.py` | Registered at `api/sip/` |
 
@@ -466,9 +466,9 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 | `GET/POST` | `/api/sip/trades/` | List all trades / add single trade |
 | `PATCH` | `/api/sip/trades/<id>/close/` | Close individual trade by ID (direct, no FIFO) |
 | `POST` | `/api/sip/sell/` | **FIFO sell** across open positions for a ticker |
-| `GET` | `/api/sip/holdings/` | Aggregated active holdings with CMP from price cache |
+| `GET` | `/api/sip/holdings/` | Aggregated active holdings with CMP from price cache. Response includes `fresh_invested` (cumulative fresh cash from last SIPWeeklySnapshot). |
 | `GET` | `/api/sip/booked-pl/` | Closed trades: ETF-level summary + individual trade detail |
-| `GET` | `/api/sip/dashboard/` | Full summary: XIRR, carry-forward, chart data |
+| `GET` | `/api/sip/dashboard/` | Full summary: XIRR, carry-forward, chart data. `weekly_chart_data` rows include `weekly_buy`, `exits_recycled`, `fresh_cash`, `cumulative_fresh`, `portfolio_value`, `n50_value`, `n500_value`. Summary includes `n50_portfolio_value` and `n500_portfolio_value`. |
 | `POST` | `/api/sip/refresh-prices/` | Force-fetch live prices from yfinance + recalculate |
 | `DELETE` | `/api/sip/clear/` | Wipe all SIPTrade + SIPWeeklySnapshot for user |
 
@@ -503,6 +503,8 @@ Pure-Python Newton's method (no scipy). Cashflows: `(-weekly_buy, week_date)` fo
 
 Same fresh-cash amounts invested into `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) each week at Friday close. Alpha = your XIRR minus benchmark XIRR (in percentage points).
 
+Weekly benchmark portfolio values are computed in `recalculate_for_user`: cumulative units are tracked week-by-week (fresh / price_at_week), then valued at today's price for the last week. These appear as `n50_value` / `n500_value` per row in `weekly_chart_data`, and as `n50_portfolio_value` / `n500_portfolio_value` in the summary.
+
 ### ETF Name Normalisation
 
 `SIPTrade.etf_name` is stored independently per trade row — it is **not** a FK to `SIPETFMaster`. To keep names consistent across CSV imports, manual entries, and display pages:
@@ -525,9 +527,9 @@ Same fresh-cash amounts invested into `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 50
 | Page | Route | Key features |
 |---|---|---|
 | `SIPTrades.tsx` | `/sip/trades` | Flat table sorted by date (toggle ↑↓), CSV import modal, add trade modal. No sell button here. |
-| `SIPHoldings.tsx` | `/sip/holdings` | Holdings aggregated by ticker. 4 summary cards. Two Recharts PieCharts (invested vs current allocation). Per-row "Sell" button opens FIFO sell modal showing available qty + partial sell preview. |
+| `SIPHoldings.tsx` | `/sip/holdings` | Holdings aggregated by ticker. **5 summary cards**: Fresh Cash Invested, Total Invested, Current Value, Unrealised P&L, Avg Return. Two Recharts PieCharts (invested vs current allocation). Per-row "Sell" button opens FIFO sell modal showing available qty + partial sell preview. |
 | `SIPBookedPL.tsx` | `/sip/booked-pl` | 4 summary cards. Table 1: ETF-wise summary (ticker, trades count, total qty, invested, exit value, booked P&L, return%). Table 2: collapsible trade-wise detail (+ hold days column). |
-| `SIPJournal.tsx` | `/sip/summary` | XIRR, alpha vs benchmarks, carry-forward chart, active holdings, booked P&L breakdown. |
+| `SIPJournal.tsx` | `/sip/summary` | 7 stat cards: Fresh Invested, Portfolio Value (+ XIRR sub), Unrealised P&L, Booked P&L, Your XIRR, If in Nifty 50 (value + XIRR + alpha), If in Nifty 500 (value + XIRR + alpha). Portfolio Growth chart with 4 lines: Fresh Invested (blue), Portfolio Value (green), Nifty 50 benchmark (orange dashed), Nifty 500 benchmark (purple dashed). Collapsible **Weekly Cashflow** table below chart (Week / Weekly Buy / Exits Recycled / Fresh Cash / Cumulative Fresh; yellow rows for recycled weeks; totals footer). Collapsible Active Holdings and Booked P&L sections below. |
 
 ### CSV format accepted
 

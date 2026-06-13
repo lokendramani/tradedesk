@@ -364,11 +364,42 @@ def recalculate_for_user(user, fetch_prices: bool = False) -> dict:
     alpha_n500 = (round(your_xirr_pct - bench['n500_xirr'], 2)
                   if your_xirr_pct is not None and bench['n500_xirr'] is not None else None)
 
+    # Benchmark portfolio values per week — same fresh cash invested in N50/N500 each week
+    last_snap_week = snapshots[-1].week_date if snapshots else None
+    n50_units_cum  = D0
+    n500_units_cum = D0
+    bench_by_week: dict = {}
+    for w in sorted(fresh_by_week.keys()):
+        fresh = _d(fresh_by_week[w])
+        if fresh > 0:
+            p50,  _ = _price_on_or_before(price_map, BENCHMARK_N50,  w)
+            p500, _ = _price_on_or_before(price_map, BENCHMARK_N500, w)
+            if p50:
+                n50_units_cum  += fresh / _d(p50)
+            if p500:
+                n500_units_cum += fresh / _d(p500)
+        target = today if w == last_snap_week else w
+        c50,  _ = _price_on_or_before(price_map, BENCHMARK_N50,  target)
+        c500, _ = _price_on_or_before(price_map, BENCHMARK_N500, target)
+        bench_by_week[w] = (
+            float(n50_units_cum  * _d(c50))  if c50  and n50_units_cum  > 0 else None,
+            float(n500_units_cum * _d(c500)) if c500 and n500_units_cum > 0 else None,
+        )
+
+    last_bench            = bench_by_week.get(last_snap_week, (None, None)) if last_snap_week else (None, None)
+    n50_portfolio_value   = last_bench[0]
+    n500_portfolio_value  = last_bench[1]
+
     weekly_chart = [
         {
             'week':             snap.week_date.isoformat(),
+            'weekly_buy':       float(snap.weekly_buy),
+            'exits_recycled':   float(snap.exits_recycled),
+            'fresh_cash':       float(snap.fresh_cash),
             'cumulative_fresh': float(snap.cumulative_fresh),
             'portfolio_value':  float(snap.portfolio_value) if snap.portfolio_value is not None else None,
+            'n50_value':        bench_by_week.get(snap.week_date, (None, None))[0],
+            'n500_value':       bench_by_week.get(snap.week_date, (None, None))[1],
         }
         for snap in snapshots
     ]
@@ -384,6 +415,8 @@ def recalculate_for_user(user, fetch_prices: bool = False) -> dict:
             'n500_xirr':               bench['n500_xirr'],
             'alpha_n50':               alpha_n50,
             'alpha_n500':              alpha_n500,
+            'n50_portfolio_value':     n50_portfolio_value,
+            'n500_portfolio_value':    n500_portfolio_value,
             'has_stale_prices':        has_stale,
             'benchmark_missing_weeks': bench['benchmark_missing_weeks'],
         },

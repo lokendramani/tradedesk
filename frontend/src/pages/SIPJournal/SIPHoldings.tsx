@@ -316,7 +316,8 @@ export default function SIPHoldings() {
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <SCard label="Fresh Cash Invested" value={fmt(data?.fresh_invested ?? null)} />
         <SCard label="Total Invested" value={fmt(totalInv)} />
         <SCard
           label="Current Value"
