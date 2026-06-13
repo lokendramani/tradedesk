@@ -138,6 +138,19 @@ def parse_sip_csv(file_obj, user) -> tuple:
             'exit_price': exit_price,
         })
 
+    # Normalise etf_name against ETF master so CSV abbreviations ("Pvt") match the
+    # canonical name ("Private") — one batch SELECT, no per-row queries.
+    if valid_rows:
+        from .models import SIPETFMaster
+        tickers_in_batch = {r['ticker'] for r in valid_rows}
+        master_names = {
+            e.ticker: e.etf_name
+            for e in SIPETFMaster.objects.filter(ticker__in=tickers_in_batch)
+        }
+        for r in valid_rows:
+            if r['ticker'] in master_names:
+                r['etf_name'] = master_names[r['ticker']]
+
     # Bulk-store CMPs from CSV into SIPPriceCache (marked stale — user can refresh later)
     if cmp_by_ticker:
         from .models import SIPPriceCache

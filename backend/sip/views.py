@@ -72,12 +72,19 @@ def _add_trade(request):
         return Response({'error': f'Missing fields: {", ".join(missing)}'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
+        ticker   = str(data['ticker']).upper()
+        etf_name = data['etf_name']
+        try:
+            etf_name = SIPETFMaster.objects.get(ticker=ticker).etf_name
+        except SIPETFMaster.DoesNotExist:
+            pass
+
         trade = SIPTrade(
             user=request.user,
             trade_date=data['trade_date'],
-            etf_name=data['etf_name'],
+            etf_name=etf_name,
             asset_class=data['asset_class'],
-            ticker=str(data['ticker']).upper(),
+            ticker=ticker,
             qty=data['qty'],
             price=data['price'],
             notes=data.get('notes', ''),
@@ -168,8 +175,14 @@ def holdings(request):
         h['qty']         += t.qty
         h['invested']    += t.trade_value
 
-    # Latest price per ticker — single SELECT, then iterate in Python
+    # Override etf_name with canonical name from ETF master (covers old imported data)
     tickers = list(by_ticker.keys())
+    master_names = {e.ticker: e.etf_name for e in SIPETFMaster.objects.filter(ticker__in=tickers)}
+    for ticker_key, h in by_ticker.items():
+        if ticker_key in master_names:
+            h['etf_name'] = master_names[ticker_key]
+
+    # Latest price per ticker — single SELECT, then iterate in Python
     latest_prices: dict = {}
     for pc in SIPPriceCache.objects.filter(ticker__in=tickers).order_by('ticker', '-price_date'):
         if pc.ticker not in latest_prices:
@@ -255,6 +268,15 @@ def booked_pl(request):
         h['total_invested']   += t.trade_value
         h['total_exit_value'] += (t.exit_value or Decimal('0'))
 
+    # Override etf_name with canonical name from ETF master (covers old imported data)
+    master_names = {
+        e.ticker: e.etf_name
+        for e in SIPETFMaster.objects.filter(ticker__in=list(by_ticker.keys()))
+    }
+    for ticker_key, h in by_ticker.items():
+        if ticker_key in master_names:
+            h['etf_name'] = master_names[ticker_key]
+
     summary = []
     for ticker, h in by_ticker.items():
         inv  = float(h['total_invested'])
@@ -285,7 +307,7 @@ def booked_pl(request):
         trade_list.append({
             'id':          str(t.id),
             'ticker':      t.ticker,
-            'etf_name':    t.etf_name,
+            'etf_name':    master_names.get(t.ticker, t.etf_name),
             'asset_class': t.asset_class,
             'trade_date':  t.trade_date.isoformat(),
             'exit_date':   t.exit_date.isoformat(),
