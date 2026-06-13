@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, List, TrendingUp, PieChart, BarChart2,
   TableProperties, LineChart, LayoutGrid, BookCheck, Shield, Settings,
-  ChevronLeft, ChevronRight, LogOut,
+  ChevronLeft, ChevronRight, ChevronDown, LogOut,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import TradeChatBot from './TradeChatBot'
@@ -33,10 +33,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'SIP Journal',
     items: [
-      { path: '/sip/trades',    label: 'Trades',    icon: TableProperties },
-      { path: '/sip/holdings',  label: 'Holdings',  icon: LayoutGrid      },
+      { path: '/sip/summary',   label: 'Summary',    icon: LineChart       },
+      { path: '/sip/trades',    label: 'Trades',     icon: TableProperties },
+      { path: '/sip/holdings',  label: 'Holdings',   icon: LayoutGrid      },
       { path: '/sip/booked-pl', label: 'Booked P&L', icon: BookCheck      },
-      { path: '/sip/summary',   label: 'Summary',   icon: LineChart       },
     ],
   },
 ]
@@ -63,10 +63,27 @@ export default function Layout() {
     () => localStorage.getItem('sidebar_collapsed') === 'true'
   )
 
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('nav_section_collapsed')
+      return stored ? JSON.parse(stored) : {}
+    } catch {
+      return {}
+    }
+  })
+
   const toggleSidebar = () => {
     setCollapsed((prev) => {
       const next = !prev
       localStorage.setItem('sidebar_collapsed', String(next))
+      return next
+    })
+  }
+
+  const toggleSection = (label: string) => {
+    setSectionCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] }
+      localStorage.setItem('nav_section_collapsed', JSON.stringify(next))
       return next
     })
   }
@@ -113,26 +130,42 @@ export default function Layout() {
           {/* Nav */}
           <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
             {/* Grouped nav items */}
-            {NAV_GROUPS.map((group, gi) => (
-              <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
-                {!collapsed && (
-                  <div className="px-4 pb-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-muted/70">
-                      {group.label}
-                    </span>
-                  </div>
-                )}
-                {collapsed && gi > 0 && <div className="border-t border-surface-border mx-3 mb-2" />}
-                <div className="space-y-0.5">
-                  {group.items.map(({ path, label, icon: Icon }) => (
-                    <NavLink key={path} to={path} className={navLinkClass} title={collapsed ? label : undefined}>
-                      <Icon size={18} className="flex-shrink-0" />
-                      {!collapsed && <span className="truncate">{label}</span>}
-                    </NavLink>
-                  ))}
+            {NAV_GROUPS.map((group, gi) => {
+              const isSectionCollapsed = !collapsed && !!sectionCollapsed[group.label]
+              return (
+                <div key={group.label} className={gi > 0 ? 'mt-2' : ''}>
+                  {/* Section header — only when sidebar is expanded */}
+                  {!collapsed ? (
+                    <button
+                      onClick={() => toggleSection(group.label)}
+                      className="w-full flex items-center justify-between px-4 py-1.5 group"
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-muted/70 group-hover:text-neutral-muted transition-colors">
+                        {group.label}
+                      </span>
+                      <ChevronDown
+                        size={12}
+                        className={`text-neutral-muted/50 transition-transform duration-200 ${isSectionCollapsed ? '-rotate-90' : ''}`}
+                      />
+                    </button>
+                  ) : (
+                    gi > 0 && <div className="border-t border-surface-border mx-3 mb-2" />
+                  )}
+
+                  {/* Items — always visible in icon-only mode; toggleable when expanded */}
+                  {!isSectionCollapsed && (
+                    <div className="space-y-0.5">
+                      {group.items.map(({ path, label, icon: Icon }) => (
+                        <NavLink key={path} to={path} className={navLinkClass} title={collapsed ? label : undefined}>
+                          <Icon size={18} className="flex-shrink-0" />
+                          {!collapsed && <span className="truncate">{label}</span>}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* Standalone items */}
             <div className="border-t border-surface-border my-3 mx-4" />

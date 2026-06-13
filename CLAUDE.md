@@ -422,7 +422,11 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 - **Inactive item**: `text-neutral-muted hover:bg-surface-page`.
 - **Transition**: `transition-all duration-200` on the `<aside>` width.
 - **Bottom**: user initials avatar (bg-brand/10) + LogOut icon. Full name/email/text shown only when expanded.
-- **Grouped nav** (`NAV_GROUPS` in Layout.tsx): "Trade Journal" (Dashboard, Trade Log, Equity Curve, Segments) and "SIP Journal" (Trades, Holdings, Booked P&L, Summary). Group labels show when expanded; a thin divider replaces labels when collapsed. MF Dashboard sits standalone below a divider.
+- **Grouped nav** (`NAV_GROUPS` in Layout.tsx):
+  - "Trade Journal": Dashboard → Trade Log → Equity Curve → Segments
+  - "SIP Journal": Summary → Trades → Holdings → Booked P&L *(Summary first — mirrors Dashboard pattern)*
+  - MF Dashboard sits standalone below a divider.
+- **Section collapse/expand**: Each group label is a clickable button (ChevronDown rotates to indicate state). Collapsed state persisted per-section in `localStorage` key `nav_section_collapsed` (JSON object keyed by group label). In icon-only mode all items always visible — section toggles hidden.
 
 ### Chart Colors (Recharts)
 
