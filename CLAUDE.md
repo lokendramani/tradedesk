@@ -452,7 +452,7 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 | File | Purpose |
 |---|---|
 | `models.py` | 4 models: SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache |
-| `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (ignored or stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP stored to SIPPriceCache (is_stale=True) via single bulk_create. |
+| `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (ignored or stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP stored to SIPPriceCache (is_stale=True) via single bulk_create. After parsing all rows, one batch SELECT against SIPETFMaster normalises etf_name for every ticker found in the master — CSV abbreviations (e.g. "Pvt Bank") are replaced with the canonical name before saving. |
 | `price_service.py` | yfinance fetch + per-day cache (SIPPriceCache). NSE equities append `.NS`; benchmarks use `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) |
 | `calculations.py` | Full pipeline: `recalculate_for_user(user, fetch_prices=False)` — fresh-cash, holdings, booked P&L, weekly values, XIRR, benchmark XIRR. All snapshot writes use bulk_create(update_conflicts=True) + bulk_update — O(1) DB round-trips. |
 | `views.py` | 8 function-based views (see endpoints below) |
@@ -502,6 +502,16 @@ Pure-Python Newton's method (no scipy). Cashflows: `(-weekly_buy, week_date)` fo
 ### Benchmark comparison
 
 Same fresh-cash amounts invested into `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) each week at Friday close. Alpha = your XIRR minus benchmark XIRR (in percentage points).
+
+### ETF Name Normalisation
+
+`SIPTrade.etf_name` is stored independently per trade row — it is **not** a FK to `SIPETFMaster`. To keep names consistent across CSV imports, manual entries, and display pages:
+
+- **CSV import (`parser.py`)**: after all rows are validated, one batch `SELECT` fetches `SIPETFMaster` for all tickers in the batch; any matching ticker has its `etf_name` replaced with the master's canonical name before `bulk_create`.
+- **Manual add trade (`views._add_trade`)**: `SIPETFMaster.get(ticker=ticker)` is called before saving; canonical name is used if the ticker exists.
+- **Holdings & Booked P&L views (read time)**: a batch `SIPETFMaster` lookup overrides `etf_name` in the aggregated `by_ticker` dict, so existing trades with old/abbreviated names display correctly without a data migration.
+
+**FIFO sell, close trade, and all calculations use `ticker` as the join key — `etf_name` mismatches have zero functional impact.**
 
 ### Performance notes
 
