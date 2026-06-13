@@ -254,7 +254,7 @@ User (users)
  └── SIPWeeklySnapshot (sip_weekly) ← carry-forward per week (upserted, not per-user-trade)
 
 Shared (no user FK):
- └── SIPPriceCache (ticker, price_date) ← yfinance cache + CSV CMP values
+ └── SIPPriceCache (ticker, price_date) ← yfinance cache (live prices only; CSV CMP ignored)
  └── SIPBenchmarkPrice (week_date)      ← Nifty50 + Nifty500 weekly prices
 ```
 
@@ -452,8 +452,8 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 | File | Purpose |
 |---|---|
 | `models.py` | 4 models: SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache |
-| `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (ignored or stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP stored to SIPPriceCache (is_stale=True) via single bulk_create. After parsing all rows, one batch SELECT against SIPETFMaster normalises etf_name for every ticker found in the master — CSV abbreviations (e.g. "Pvt Bank") are replaced with the canonical name before saving. |
-| `price_service.py` | yfinance fetch + per-day cache (SIPPriceCache). NSE equities append `.NS`; benchmarks use `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) |
+| `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (accepted, not stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP column is silently ignored — live prices are batch-fetched from yfinance after import instead. After parsing, one batch SELECT against SIPETFMaster normalises etf_name for every ticker. Returns `(valid_rows, errors, open_tickers)` — `open_tickers` is the set of tickers for open-position rows, used by `upload_csv` to batch-fetch CMP in one yfinance call. |
+| `price_service.py` | yfinance fetch + per-day cache (SIPPriceCache). NSE equities append `.NS`; benchmarks use `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500). Cache is fresh-only: `is_stale=True` entries are treated as cache misses in both `batch_fetch_current` and `get_current_price`, so stale values are always overwritten by a live yfinance call. |
 | `calculations.py` | Full pipeline: `recalculate_for_user(user, fetch_prices=False)` — fresh-cash, holdings, booked P&L, weekly values, XIRR, benchmark XIRR. All snapshot writes use bulk_create(update_conflicts=True) + bulk_update — O(1) DB round-trips. |
 | `views.py` | 8 function-based views (see endpoints below) |
 | `urls.py` | Registered at `api/sip/` |
@@ -537,7 +537,7 @@ Date, ETF, AssetClass, Ticker, Qty, Price[, TradePrice, CMP, Exit Date, Exit Pri
 ```
 
 - Date formats: `DD-Mon-YYYY` or `DD-Mon-YY` (e.g. `24-Oct-2025` or `24-Oct-25`)
-- Extra columns (TradePrice, CMP, Profit/Loss) are accepted and ignored **except** CMP — if present and > 0, stored to SIPPriceCache (is_stale=True) via bulk_create so Holdings page shows data immediately without a yfinance refresh.
+- Extra columns (TradePrice, CMP, Profit/Loss) are all accepted without error but **silently ignored**. CMP is no longer stored from CSV — after `bulk_create`, `upload_csv` calls `batch_fetch_current(open_tickers)` to fetch live prices in one yfinance download and persist them as `is_stale=False`.
 - Duplicate rows (same user+date+ticker+qty+price) are silently skipped.
 
 --- END SIP JOURNAL FEATURE ---

@@ -23,12 +23,12 @@ def upload_csv(request):
     if not f:
         return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
 
-    valid_rows, errors = parse_sip_csv(f, request.user)
+    valid_rows, errors, open_tickers = parse_sip_csv(f, request.user)
 
     if errors and not valid_rows:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    # bulk insert
+    # bulk insert trades first — decoupled from price fetch
     objs = [
         SIPTrade(
             user=request.user,
@@ -47,10 +47,21 @@ def upload_csv(request):
     ]
     SIPTrade.objects.bulk_create(objs)
 
+    # batch-fetch live CMP for all open-position tickers in one yfinance call
+    price_refresh_ok = True
+    if open_tickers:
+        try:
+            batch_fetch_current(list(open_tickers))
+        except Exception as e:
+            logger.warning('upload_csv: batch price fetch failed: %s', e)
+            price_refresh_ok = False
+
     return Response({
         'imported':           len(objs),
         'duplicates_skipped': 0,
         'errors':             errors,
+        'price_refresh_ok':   price_refresh_ok,
+        'prices_fetched':     list(open_tickers),
     })
 
 

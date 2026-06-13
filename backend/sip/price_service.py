@@ -123,7 +123,7 @@ def get_current_price(ticker: str) -> tuple:
     """Returns (price: Decimal | None, is_stale: bool)."""
     today = date.today()
     cached = _cache_get(ticker, today)
-    if cached:
+    if cached and not cached.is_stale:
         return cached.close_price, cached.is_stale
 
     try:
@@ -214,7 +214,7 @@ def batch_fetch_current(tickers: list) -> dict:
 
     for ticker in tickers:
         cached = _cache_get(ticker, today)
-        if cached:
+        if cached and not cached.is_stale:
             result[ticker] = (cached.close_price, cached.is_stale)
         else:
             missing.append(ticker)

@@ -8,7 +8,6 @@ Date format: DD-Mon-YY  (e.g. 02-Jan-24)
 """
 import csv
 import io
-from decimal import Decimal
 from datetime import datetime, date
 
 REQUIRED_COLS = {'date', 'etf', 'assetclass', 'ticker', 'qty', 'price'}
@@ -36,9 +35,10 @@ def _parse_date(raw: str) -> date:
 
 def parse_sip_csv(file_obj, user) -> tuple:
     """
-    Returns (valid_rows: list[dict], errors: list[str]).
+    Returns (valid_rows: list[dict], errors: list[str], open_tickers: set[str]).
     valid_rows keys: trade_date, etf_name, asset_class, ticker, qty, price,
-                     exit_date (date|None), exit_price (Decimal|None)
+                     exit_date (date|None), exit_price (float|None)
+    open_tickers: unique tickers for rows with no exit_date (used for batch CMP fetch).
     """
     from .models import SIPTrade
 
@@ -48,16 +48,16 @@ def parse_sip_csv(file_obj, user) -> tuple:
             content = content.decode('utf-8-sig')  # handle BOM
         reader = csv.DictReader(io.StringIO(content))
     except Exception as e:
-        return [], [f'Could not read CSV: {e}']
+        return [], [f'Could not read CSV: {e}'], set()
 
     # normalise header keys
     if reader.fieldnames is None:
-        return [], ['CSV has no header row']
+        return [], ['CSV has no header row'], set()
 
     header_map = {_normalise_header(h): h for h in reader.fieldnames}
     missing = REQUIRED_COLS - set(header_map.keys())
     if missing:
-        return [], [f'Missing columns: {", ".join(sorted(missing))}']
+        return [], [f'Missing columns: {", ".join(sorted(missing))}'], set()
 
     # existing DB keys for dedup
     existing_keys = set(
@@ -68,7 +68,7 @@ def parse_sip_csv(file_obj, user) -> tuple:
     valid_rows = []
     errors = []
     seen_in_batch: set = set()
-    cmp_by_ticker: dict = {}          # ticker → latest CMP from CSV (optional column)
+    open_tickers: set = set()         # tickers for open positions — used for batch CMP fetch
 
     for i, raw_row in enumerate(reader, start=2):  # row 1 is header
         row = {_normalise_header(k): (v or '').strip() for k, v in raw_row.items()}
@@ -92,15 +92,8 @@ def parse_sip_csv(file_obj, user) -> tuple:
             errors.append(f'Row {i}: Qty/Price must be positive numbers')
             continue
 
-        # Optional CMP column — store latest non-zero value per ticker
-        cmp_raw = row.get('cmp', '')
-        if cmp_raw:
-            try:
-                cmp_val = float(cmp_raw)
-                if cmp_val > 0:
-                    cmp_by_ticker[ticker] = cmp_val
-            except (ValueError, TypeError):
-                pass
+        # CMP column is accepted without error but silently ignored —
+        # live prices are fetched via yfinance batch call after import.
 
         exit_date_raw  = row.get('exitdate', '') or row.get('exit_date', '')
         exit_price_raw = row.get('exitprice', '') or row.get('exit_price', '')
@@ -127,6 +120,9 @@ def parse_sip_csv(file_obj, user) -> tuple:
             continue
         seen_in_batch.add(key)
 
+        if exit_date is None:
+            open_tickers.add(ticker)
+
         valid_rows.append({
             'trade_date': trade_date,
             'etf_name': etf_name,
@@ -151,20 +147,4 @@ def parse_sip_csv(file_obj, user) -> tuple:
             if r['ticker'] in master_names:
                 r['etf_name'] = master_names[r['ticker']]
 
-    # Bulk-store CMPs from CSV into SIPPriceCache (marked stale — user can refresh later)
-    if cmp_by_ticker:
-        from .models import SIPPriceCache
-        today = datetime.now().date()
-        cache_rows = [
-            SIPPriceCache(ticker=t, price_date=today,
-                          close_price=Decimal(str(v)), is_stale=True)
-            for t, v in cmp_by_ticker.items()
-        ]
-        SIPPriceCache.objects.bulk_create(
-            cache_rows,
-            update_conflicts=True,
-            update_fields=['close_price', 'is_stale'],
-            unique_fields=['ticker', 'price_date'],
-        )
-
-    return valid_rows, errors
+    return valid_rows, errors, open_tickers
