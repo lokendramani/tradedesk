@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, List, TrendingUp, PieChart, BarChart2,
-  Shield, Settings, ChevronLeft, ChevronRight, LogOut,
+  Repeat, TableProperties, LineChart, LayoutGrid, BookCheck, Shield, Settings,
+  ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import TradeChatBot from './TradeChatBot'
@@ -14,12 +15,34 @@ interface NavItem {
   adminOnly?: boolean
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { path: '/dashboard', label: 'Dashboard',    icon: LayoutDashboard },
-  { path: '/trades',    label: 'Trade Log',    icon: List            },
-  { path: '/equity',    label: 'Equity Curve', icon: TrendingUp      },
-  { path: '/segments',  label: 'Segments',     icon: PieChart        },
-  { path: '/mf',        label: 'MF Dashboard', icon: BarChart2       },
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Trade Journal',
+    items: [
+      { path: '/dashboard', label: 'Dashboard',    icon: LayoutDashboard },
+      { path: '/trades',    label: 'Trade Log',    icon: List            },
+      { path: '/equity',    label: 'Equity Curve', icon: TrendingUp      },
+      { path: '/segments',  label: 'Segments',     icon: PieChart        },
+    ],
+  },
+  {
+    label: 'SIP Journal',
+    items: [
+      { path: '/sip/trades',    label: 'Trades',    icon: TableProperties },
+      { path: '/sip/holdings',  label: 'Holdings',  icon: LayoutGrid      },
+      { path: '/sip/booked-pl', label: 'Booked P&L', icon: BookCheck      },
+      { path: '/sip/summary',   label: 'Summary',   icon: LineChart       },
+    ],
+  },
+]
+
+const STANDALONE_ITEMS: NavItem[] = [
+  { path: '/mf', label: 'MF Dashboard', icon: BarChart2 },
 ]
 
 const BOTTOM_ITEMS: NavItem[] = [
@@ -89,9 +112,32 @@ export default function Layout() {
 
           {/* Nav */}
           <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
-            {/* Main nav items */}
+            {/* Grouped nav items */}
+            {NAV_GROUPS.map((group, gi) => (
+              <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+                {!collapsed && (
+                  <div className="px-4 pb-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-muted/70">
+                      {group.label}
+                    </span>
+                  </div>
+                )}
+                {collapsed && gi > 0 && <div className="border-t border-surface-border mx-3 mb-2" />}
+                <div className="space-y-0.5">
+                  {group.items.map(({ path, label, icon: Icon }) => (
+                    <NavLink key={path} to={path} className={navLinkClass} title={collapsed ? label : undefined}>
+                      <Icon size={18} className="flex-shrink-0" />
+                      {!collapsed && <span className="truncate">{label}</span>}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* Standalone items */}
+            <div className="border-t border-surface-border my-3 mx-4" />
             <div className="space-y-0.5">
-              {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+              {STANDALONE_ITEMS.map(({ path, label, icon: Icon }) => (
                 <NavLink key={path} to={path} className={navLinkClass} title={collapsed ? label : undefined}>
                   <Icon size={18} className="flex-shrink-0" />
                   {!collapsed && <span className="truncate">{label}</span>}

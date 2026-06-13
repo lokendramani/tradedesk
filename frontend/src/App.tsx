@@ -12,6 +12,10 @@ import Equity     from './pages/Equity/Equity'
 import Segments   from './pages/Segments/Segments'
 import AdminPanel   from './pages/Admin/AdminPanel'
 import MFDashboard  from './pages/MFDashboard/MFDashboard'
+import SIPJournal   from './pages/SIPJournal/SIPJournal'
+import SIPTrades    from './pages/SIPJournal/SIPTrades'
+import SIPHoldings  from './pages/SIPJournal/SIPHoldings'
+import SIPBookedPL  from './pages/SIPJournal/SIPBookedPL'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
@@ -28,12 +32,12 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 function AppLoader() {
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center font-mono">
+    <div className="min-h-screen bg-surface-page flex items-center justify-center">
       <div className="text-center">
-        <div className="text-2xl font-bold text-gray-100 mb-2">
-          Trade<span className="text-blue-400">Desk</span>
+        <div className="font-display text-2xl font-bold text-neutral-primary mb-2">
+          Trade<span className="text-brand">Desk</span>
         </div>
-        <div className="text-xs text-gray-600 animate-pulse">Loading...</div>
+        <div className="text-xs text-neutral-muted animate-pulse">Loading...</div>
       </div>
     </div>
   )
@@ -66,6 +70,13 @@ export default function App() {
           <Route path="segments"    element={<Segments />} />
           <Route path="admin"       element={<AdminRoute><AdminPanel /></AdminRoute>} />
           <Route path="mf"          element={<MFDashboard />} />
+          <Route path="sip">
+            <Route index             element={<Navigate to="/sip/trades" replace />} />
+            <Route path="trades"     element={<SIPTrades />} />
+            <Route path="holdings"   element={<SIPHoldings />} />
+            <Route path="booked-pl"  element={<SIPBookedPL />} />
+            <Route path="summary"    element={<SIPJournal />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

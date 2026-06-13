@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'portfolio',
     'trades',
     'mf',
+    'sip',
 ]
 
 # ── Middleware ────────────────────────────────────────

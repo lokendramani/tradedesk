@@ -82,3 +82,120 @@ export interface TradeFilter {
   only_loss?: boolean
   search?: string
 }
+
+// ── SIP Journal types ────────────────────────────────────────────────────────
+
+export interface SIPTrade {
+  id: string
+  trade_date: string
+  etf_name: string
+  asset_class: string
+  ticker: string
+  qty: number
+  price: number
+  trade_value: number
+  exit_date?: string | null
+  exit_price?: number | null
+  exit_value?: number | null
+  pl?: number | null
+  notes?: string
+}
+
+export interface SIPHolding {
+  ticker: string
+  etf_name: string
+  asset_class: string
+  qty: number
+  avg_price: number
+  invested: number
+  cmp: number | null
+  current_value: number | null
+  pl: number | null
+  pl_pct: number | null
+  price_stale: boolean
+}
+
+export interface SIPHoldingsResponse {
+  holdings: SIPHolding[]
+  total_invested: number
+  total_current: number | null
+  has_stale_prices: boolean
+}
+
+export interface SIPBookedTicker {
+  ticker: string
+  etf_name: string
+  booked_pl: number
+  trade_count: number
+}
+
+export interface SIPWeekPoint {
+  week: string
+  cumulative_fresh: number
+  portfolio_value: number | null
+}
+
+export interface SIPSummary {
+  fresh_invested: number
+  portfolio_value: number
+  unrealised_pl: number
+  booked_pl: number
+  your_xirr: number | null
+  n50_xirr: number | null
+  n500_xirr: number | null
+  alpha_n50: number | null
+  alpha_n500: number | null
+  has_stale_prices: boolean
+  benchmark_missing_weeks: number
+}
+
+export interface SIPDashboard {
+  summary: SIPSummary
+  active_holdings: SIPHolding[]
+  booked_pl_by_ticker: SIPBookedTicker[]
+  weekly_chart_data: SIPWeekPoint[]
+}
+
+export interface SIPBookedSummary {
+  ticker: string
+  etf_name: string
+  asset_class: string
+  trade_count: number
+  total_qty: number
+  total_invested: number
+  total_exit_value: number
+  booked_pl: number
+  return_pct: number
+}
+
+export interface SIPBookedTrade {
+  id: string
+  ticker: string
+  etf_name: string
+  asset_class: string
+  trade_date: string
+  exit_date: string
+  hold_days: number | null
+  qty: number
+  buy_price: number
+  trade_value: number
+  exit_price: number | null
+  exit_value: number | null
+  pl: number | null
+  return_pct: number | null
+}
+
+export interface SIPBookedPLResponse {
+  summary: SIPBookedSummary[]
+  trades: SIPBookedTrade[]
+  total_invested: number
+  total_exit_value: number
+  total_pl: number
+  total_return_pct: number
+}
+
+export interface SIPUploadResult {
+  imported: number
+  duplicates_skipped: number
+  errors: string[]
+}

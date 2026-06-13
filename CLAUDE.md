@@ -34,7 +34,12 @@ tradersdesk/
     │   │   ├── Equity/    Equity curve chart
     │   │   ├── Segments/  Per-segment breakdown
     │   │   ├── MFDashboard/ MF portfolio + CAS import
-    │   │   └── Admin/     Admin panel (ADMIN role only)
+    │   │   ├── Admin/     Admin panel (ADMIN role only)
+    │   │   └── SIPJournal/
+    │   │       ├── SIPTrades.tsx    raw trade table + CSV import
+    │   │       ├── SIPHoldings.tsx  active holdings + 2 pie charts + FIFO sell
+    │   │       ├── SIPBookedPL.tsx  booked P&L (ETF summary + trade detail)
+    │   │       └── SIPJournal.tsx   summary dashboard (XIRR, chart, carry-forward)
     │   ├── store/         Zustand stores (authStore)
     │   ├── types/         Shared TypeScript interfaces
     │   └── utils/         Format helpers (formatCurrency, formatDate, etc.)
@@ -168,6 +173,10 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 | `/segments` | Segments/Segments | Per-segment stats cards |
 | `/mf` | MFDashboard/MFDashboard | MF summary + CAS PDF upload + schemes/txns tables |
 | `/admin` | Admin/AdminPanel | User list → portfolio picker → trade viewer (ADMIN only) |
+| `/sip/trades` | SIPJournal/SIPTrades | Raw SIP trade table + CSV import + add trade |
+| `/sip/holdings` | SIPJournal/SIPHoldings | Active holdings table + 2 pie charts + FIFO sell modal |
+| `/sip/booked-pl` | SIPJournal/SIPBookedPL | Booked P&L: ETF summary table + trade-wise detail table |
+| `/sip/summary` | SIPJournal/SIPJournal | Full dashboard: XIRR, carry-forward, portfolio chart |
 
 ### Routing
 - `ProtectedRoute` — redirects to `/login` if not authenticated
@@ -184,6 +193,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 | `trades.ts` | trades CRUD + import + stats + equity/monthly/closedMonths |
 | `mf.ts` | CAS import + dashboard + schemes + transactions |
 | `admin.ts` | Admin: list users, user portfolios, portfolio trades |
+| `sip.ts` | SIP: listTrades, uploadCsv, addTrade, sell, getHoldings, getBookedPL, getDashboard, refreshPrices, clearData |
 | `utils.ts` | `extractList` helper for paginated/unpaginated responses |
 
 ---
@@ -219,6 +229,14 @@ User (users)
  └── MFFolio (mf_folios)       ← folio/fund-house
       └── MFScheme (mf_schemes) ← one fund
            └── MFTransaction (mf_transactions)
+
+User (users)
+ └── SIPTrade (sip_trades)          ← one buy/sell row (split on partial FIFO sell)
+ └── SIPWeeklySnapshot (sip_weekly) ← carry-forward per week (upserted, not per-user-trade)
+
+Shared (no user FK):
+ └── SIPPriceCache (ticker, price_date) ← yfinance cache + CSV CMP values
+ └── SIPBenchmarkPrice (week_date)      ← Nifty50 + Nifty500 weekly prices
 ```
 
 ---
@@ -264,13 +282,14 @@ pdfplumber==0.11.4        # CAS PDF parsing
 
 ## Known Gaps / Future Work
 
-- `yfinance` and `TWELVE_DATA_API_KEY` are in the codebase but no live price
-  feed is wired up yet; live P&L on open trades is not implemented.
+- `TWELVE_DATA_API_KEY` is in `.env` but no live price feed is wired up for the Trade Journal.
 - `/settings` route is in the sidebar but has no page component yet.
 - No automated tests exist (placeholder `tests.py` files only).
 - Pagination is set to 50 items per page but the frontend does not render
   paginator controls — it reads `res.data.data || res.data.results || res.data`.
 - `Pillow` is installed but not used anywhere visible.
+- SIP yfinance price refresh can be slow on first run (bulk-fetching NSE history). Subsequent calls use DB cache.
+- SIP Summary (`/sip/summary`) XIRR and benchmark comparison require at least one price refresh to show meaningful values.
 
 ---
 
@@ -384,6 +403,7 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 - **Inactive item**: `text-neutral-muted hover:bg-surface-page`.
 - **Transition**: `transition-all duration-200` on the `<aside>` width.
 - **Bottom**: user initials avatar (bg-brand/10) + LogOut icon. Full name/email/text shown only when expanded.
+- **Grouped nav** (`NAV_GROUPS` in Layout.tsx): "Trade Journal" (Dashboard, Trade Log, Equity Curve, Segments) and "SIP Journal" (Trades, Holdings, Booked P&L, Summary). Group labels show when expanded; a thin divider replaces labels when collapsed. MF Dashboard sits standalone below a divider.
 
 ### Chart Colors (Recharts)
 
@@ -399,3 +419,96 @@ Apply `loss` to: Avg Loss, Win Rate <50%, Net Income < 0, Trough Capital, Worst 
 | Tooltip bg | `#FFFFFF`, border `#E5E9F0` |
 
 --- END UI DESIGN SYSTEM ---
+
+---
+
+## SIP JOURNAL FEATURE
+
+**Status:** Implemented
+
+**Overview:** Tracks weekly ETF SIP investments with carry-forward cash recycling, XIRR calculation, and benchmark comparison vs Nifty 50 / Nifty 500. CSV upload for historical data; new trades and FIFO sells added through the app.
+
+### Backend App: `backend/sip/`
+
+| File | Purpose |
+|---|---|
+| `models.py` | 4 models: SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache |
+| `parser.py` | CSV parser. Required: Date, ETF, AssetClass, Ticker, Qty, Price. Optional (ignored or stored): TradePrice, CMP, Exit Date, Exit Price, Profit/Loss. CMP stored to SIPPriceCache (is_stale=True) via single bulk_create. |
+| `price_service.py` | yfinance fetch + per-day cache (SIPPriceCache). NSE equities append `.NS`; benchmarks use `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) |
+| `calculations.py` | Full pipeline: `recalculate_for_user(user, fetch_prices=False)` — fresh-cash, holdings, booked P&L, weekly values, XIRR, benchmark XIRR. All snapshot writes use bulk_create(update_conflicts=True) + bulk_update — O(1) DB round-trips. |
+| `views.py` | 8 function-based views (see endpoints below) |
+| `urls.py` | Registered at `api/sip/` |
+
+### API Endpoints
+
+| Method | URL | Purpose |
+|---|---|---|
+| `POST` | `/api/sip/upload/` | CSV import (multipart) — bulk_create only, no recalculate |
+| `GET/POST` | `/api/sip/trades/` | List all trades / add single trade |
+| `PATCH` | `/api/sip/trades/<id>/close/` | Close individual trade by ID (direct, no FIFO) |
+| `POST` | `/api/sip/sell/` | **FIFO sell** across open positions for a ticker |
+| `GET` | `/api/sip/holdings/` | Aggregated active holdings with CMP from price cache |
+| `GET` | `/api/sip/booked-pl/` | Closed trades: ETF-level summary + individual trade detail |
+| `GET` | `/api/sip/dashboard/` | Full summary: XIRR, carry-forward, chart data |
+| `POST` | `/api/sip/refresh-prices/` | Force-fetch live prices from yfinance + recalculate |
+| `DELETE` | `/api/sip/clear/` | Wipe all SIPTrade + SIPWeeklySnapshot for user |
+
+### FIFO Sell Logic (`POST /api/sip/sell/`)
+
+Body: `{ ticker, qty, exit_date, exit_price }`
+
+1. Fetch all open trades for ticker ordered by `trade_date ASC, created_at ASC` (oldest first).
+2. Validate: total available qty ≥ requested sell qty.
+3. Walk trades in order, fully closing each until qty is consumed.
+4. If a trade is only **partially** consumed → **split**: original row gets the sold qty (closed), a new row is created for the remaining qty (still open, same trade_date/price).
+5. All writes wrapped in `transaction.atomic()`.
+
+Example: 25+25=50 qty available, sell 30:
+- Trade 1 (25 qty) → fully closed
+- Trade 2 (25 qty) → split into: 5 qty closed + 20 qty new open row
+
+### Carry-Forward Logic
+
+For each buy-week in chronological order:
+- `exits_settled` = exit proceeds whose `exit_date` falls **on** that week
+- `carry` = exit proceeds whose `exit_date` falls **between** prev_week and this_week
+- `recycled = min(carry + exits_settled, weekly_buy)`
+- `fresh = weekly_buy - recycled`
+- Remaining carry rolls to next week
+
+### XIRR
+
+Pure-Python Newton's method (no scipy). Cashflows: `(-weekly_buy, week_date)` for each week + `(+exit_value, exit_date)` for exits + `(+portfolio_value, today)`.
+
+### Benchmark comparison
+
+Same fresh-cash amounts invested into `^NSEI` (Nifty 50) and `^CRSLDX` (Nifty 500) each week at Friday close. Alpha = your XIRR minus benchmark XIRR (in percentage points).
+
+### Performance notes
+
+- `recalculate_for_user(fetch_prices=False)` — DB/cache only, used by dashboard GET. No yfinance HTTP calls.
+- `recalculate_for_user(fetch_prices=True)` — fetches yfinance first; only triggered by refresh-prices POST.
+- Upload, add-trade, close-trade, and sell endpoints do NOT call recalculate — they only write trade rows. Dashboard recalculates on next visit.
+- `compute_benchmark_xirr` uses `bulk_create(update_conflicts=True)` to persist benchmark prices in one round-trip.
+
+### Frontend Pages
+
+| Page | Route | Key features |
+|---|---|---|
+| `SIPTrades.tsx` | `/sip/trades` | Flat table sorted by date (toggle ↑↓), CSV import modal, add trade modal. No sell button here. |
+| `SIPHoldings.tsx` | `/sip/holdings` | Holdings aggregated by ticker. 4 summary cards. Two Recharts PieCharts (invested vs current allocation). Per-row "Sell" button opens FIFO sell modal showing available qty + partial sell preview. |
+| `SIPBookedPL.tsx` | `/sip/booked-pl` | 4 summary cards. Table 1: ETF-wise summary (ticker, trades count, total qty, invested, exit value, booked P&L, return%). Table 2: collapsible trade-wise detail (+ hold days column). |
+| `SIPJournal.tsx` | `/sip/summary` | XIRR, alpha vs benchmarks, carry-forward chart, active holdings, booked P&L breakdown. |
+
+### CSV format accepted
+
+```
+Date, ETF, AssetClass, Ticker, Qty, Price[, TradePrice, CMP, Exit Date, Exit Price, Profit/Loss]
+24-Oct-2025, Gold BEES, Debt, GOLDBEES, 15, 100.76, 1511.4, 1828.5, , , 317.1
+```
+
+- Date formats: `DD-Mon-YYYY` or `DD-Mon-YY` (e.g. `24-Oct-2025` or `24-Oct-25`)
+- Extra columns (TradePrice, CMP, Profit/Loss) are accepted and ignored **except** CMP — if present and > 0, stored to SIPPriceCache (is_stale=True) via bulk_create so Holdings page shows data immediately without a yfinance refresh.
+- Duplicate rows (same user+date+ticker+qty+price) are silently skipped.
+
+--- END SIP JOURNAL FEATURE ---
