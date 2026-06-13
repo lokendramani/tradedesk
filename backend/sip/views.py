@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache
+from .models import SIPTrade, SIPWeeklySnapshot, SIPBenchmarkPrice, SIPPriceCache, SIPETFMaster
 from .parser import parse_sip_csv
 from .calculations import recalculate_for_user
 from .price_service import batch_fetch_current, BENCHMARK_TICKERS
@@ -45,7 +45,7 @@ def upload_csv(request):
         )
         for r in valid_rows
     ]
-    SIPTrade.objects.bulk_create(objs, ignore_conflicts=True)
+    SIPTrade.objects.bulk_create(objs)
 
     return Response({
         'imported':           len(objs),
@@ -411,19 +411,70 @@ def sell(request):
     })
 
 
+def _is_admin(user) -> bool:
+    return getattr(user, 'role', None) == 'ADMIN' or user.is_staff
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def etf_master_list(request):
+    if request.method == 'GET':
+        qs = SIPETFMaster.objects.filter(is_active=True)
+        return Response([{'ticker': e.ticker, 'etf_name': e.etf_name, 'asset_class': e.asset_class} for e in qs])
+
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
+
+    ticker      = str(request.data.get('ticker', '')).strip().upper()
+    etf_name    = str(request.data.get('etf_name', '')).strip()
+    asset_class = str(request.data.get('asset_class', '')).strip()
+    if not ticker or not etf_name or not asset_class:
+        return Response({'error': 'ticker, etf_name, asset_class are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    etf, created = SIPETFMaster.objects.update_or_create(
+        ticker=ticker,
+        defaults={'etf_name': etf_name, 'asset_class': asset_class, 'is_active': True},
+    )
+    return Response(
+        {'ticker': etf.ticker, 'etf_name': etf.etf_name, 'asset_class': etf.asset_class},
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def etf_master_detail(request, ticker):
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        etf = SIPETFMaster.objects.get(ticker=ticker.upper())
+    except SIPETFMaster.DoesNotExist:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        etf.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    etf.etf_name    = str(request.data.get('etf_name',    etf.etf_name)).strip()
+    etf.asset_class = str(request.data.get('asset_class', etf.asset_class)).strip()
+    etf.save()
+    return Response({'ticker': etf.ticker, 'etf_name': etf.etf_name, 'asset_class': etf.asset_class})
+
+
 def _trade_to_dict(t: SIPTrade) -> dict:
     return {
         'id':          str(t.id),
-        'trade_date':  t.trade_date.isoformat(),
+        'trade_date':  str(t.trade_date),
         'etf_name':    t.etf_name,
         'asset_class': t.asset_class,
         'ticker':      t.ticker,
         'qty':         float(t.qty),
         'price':       float(t.price),
         'trade_value': float(t.trade_value),
-        'exit_date':   t.exit_date.isoformat() if t.exit_date else None,
-        'exit_price':  float(t.exit_price)     if t.exit_price else None,
-        'exit_value':  float(t.exit_value)     if t.exit_value else None,
+        'exit_date':   str(t.exit_date) if t.exit_date else None,
+        'exit_price':  float(t.exit_price) if t.exit_price else None,
+        'exit_value':  float(t.exit_value) if t.exit_value else None,
         'pl':          float(t.exit_value - t.trade_value) if t.exit_value else None,
         'notes':       t.notes,
     }

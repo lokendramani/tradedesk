@@ -199,3 +199,9 @@ export interface SIPUploadResult {
   duplicates_skipped: number
   errors: string[]
 }
+
+export interface SIPETFMaster {
+  ticker: string
+  etf_name: string
+  asset_class: string
+}

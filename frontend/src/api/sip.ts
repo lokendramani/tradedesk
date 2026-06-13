@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { SIPTrade, SIPDashboard, SIPUploadResult, SIPHoldingsResponse, SIPBookedPLResponse } from '../types'
+import type { SIPTrade, SIPDashboard, SIPUploadResult, SIPHoldingsResponse, SIPBookedPLResponse, SIPETFMaster } from '../types'
 
 export const sipApi = {
   async listTrades(): Promise<SIPTrade[]> {
@@ -57,5 +57,24 @@ export const sipApi = {
   async clearData(): Promise<{ deleted_trades: number }> {
     const res = await apiClient.delete('/sip/clear/')
     return res.data
+  },
+
+  async getETFMaster(): Promise<SIPETFMaster[]> {
+    const res = await apiClient.get('/sip/etf-master/')
+    return res.data
+  },
+
+  async createETF(data: SIPETFMaster): Promise<SIPETFMaster> {
+    const res = await apiClient.post('/sip/etf-master/', data)
+    return res.data
+  },
+
+  async updateETF(ticker: string, data: Partial<SIPETFMaster>): Promise<SIPETFMaster> {
+    const res = await apiClient.put(`/sip/etf-master/${ticker}/`, data)
+    return res.data
+  },
+
+  async deleteETF(ticker: string): Promise<void> {
+    await apiClient.delete(`/sip/etf-master/${ticker}/`)
   },
 }

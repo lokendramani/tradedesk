@@ -22,12 +22,6 @@ class SIPTrade(models.Model):
 
     class Meta:
         ordering = ['trade_date']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['user', 'trade_date', 'ticker', 'qty', 'price'],
-                name='unique_sip_trade'
-            )
-        ]
 
     def save(self, *args, **kwargs):
         self.trade_value = self.qty * self.price
@@ -92,3 +86,18 @@ class SIPPriceCache(models.Model):
 
     def __str__(self):
         return f"{self.ticker} {self.price_date} {self.close_price}"
+
+
+class SIPETFMaster(models.Model):
+    ticker      = models.CharField(max_length=20, primary_key=True)
+    etf_name    = models.CharField(max_length=150)
+    asset_class = models.CharField(max_length=30)
+    is_active   = models.BooleanField(default=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['etf_name']
+
+    def __str__(self):
+        return f"{self.ticker} — {self.etf_name}"

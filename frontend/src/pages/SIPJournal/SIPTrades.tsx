@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Upload, Plus, Trash2, RefreshCw, X, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Upload, Plus, Trash2, RefreshCw, X, AlertCircle, ChevronDown } from 'lucide-react'
 import { sipApi } from '../../api/sip'
-import type { SIPTrade } from '../../types'
+import type { SIPTrade, SIPETFMaster } from '../../types'
 
 const fmt = (v: number | null | undefined) =>
   v == null ? '—' : '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 2 })
@@ -38,6 +38,12 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         <div className="p-5">
           {phase === 'pick' && (
             <>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5 flex gap-2 text-xs text-yellow-800 mb-1">
+                <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-yellow-500" />
+                <span>
+                  Importing again will add duplicate entries. If you want a fresh import, use <strong>Clear All</strong> first, then import your CSV.
+                </span>
+              </div>
               <div
                 className="border-2 border-dashed border-surface-border rounded-xl p-10 text-center cursor-pointer hover:border-brand transition-colors"
                 onClick={() => document.getElementById('sip-file-input')?.click()}
@@ -97,15 +103,107 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   )
 }
 
+// ─── ETF Combobox ─────────────────────────────────────────────────────────────
+function ETFCombobox({
+  etfList,
+  value,
+  onChange,
+}: {
+  etfList: SIPETFMaster[]
+  value: string
+  onChange: (etf: SIPETFMaster | null, raw: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(value)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setQuery(value) }, [value])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = query.trim()
+    ? etfList.filter(e =>
+        e.etf_name.toLowerCase().includes(query.toLowerCase()) ||
+        e.ticker.toLowerCase().includes(query.toLowerCase())
+      )
+    : etfList
+
+  const handleInput = (v: string) => {
+    setQuery(v)
+    setOpen(true)
+    onChange(null, v)
+  }
+
+  const handleSelect = (etf: SIPETFMaster) => {
+    setQuery(etf.etf_name)
+    setOpen(false)
+    onChange(etf, etf.etf_name)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          className={INPUT}
+          value={query}
+          onChange={e => handleInput(e.target.value)}
+          onFocus={() => setOpen(true)}
+          placeholder="Search ETF name..."
+          required
+          autoComplete="off"
+        />
+        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-muted pointer-events-none" />
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-surface-border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+          {filtered.map(etf => (
+            <button
+              key={etf.ticker}
+              type="button"
+              className="w-full text-left px-3 py-2 hover:bg-surface-page transition-colors border-b border-surface-border last:border-0"
+              onMouseDown={e => { e.preventDefault(); handleSelect(etf) }}
+            >
+              <div className="text-xs font-medium text-neutral-primary">{etf.etf_name}</div>
+              <div className="text-[10px] text-neutral-muted font-mono">{etf.ticker} · {etf.asset_class}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Add Trade Modal ──────────────────────────────────────────────────────────
 function AddTradeModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [form, setForm] = useState({ trade_date: '', etf_name: '', asset_class: 'Equity', ticker: '', qty: '', price: '' })
+  const [etfList, setEtfList] = useState<SIPETFMaster[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
+  useEffect(() => {
+    sipApi.getETFMaster().then(setEtfList).catch(() => {})
+  }, [])
+
+  const handleETFSelect = (etf: SIPETFMaster | null, raw: string) => {
+    if (etf) {
+      setForm(f => ({ ...f, etf_name: etf.etf_name, ticker: etf.ticker, asset_class: etf.asset_class }))
+    } else {
+      setForm(f => ({ ...f, etf_name: raw, ticker: '', asset_class: '' }))
+    }
+  }
+
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setSaving(true); setErr('')
+    e.preventDefault()
+    if (!form.ticker) { setErr('Please select an ETF from the list'); return }
+    setSaving(true); setErr('')
     try {
       await sipApi.addTrade({ ...form, qty: parseFloat(form.qty), price: parseFloat(form.price) } as Partial<SIPTrade>)
       onDone(); onClose()
@@ -130,24 +228,26 @@ function AddTradeModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
           </div>
           <div>
             <label className="block text-xs text-neutral-muted mb-1">ETF Name</label>
-            <input type="text" className={INPUT} value={form.etf_name} onChange={e => set('etf_name', e.target.value)} placeholder="Gold BEES" required />
+            <ETFCombobox etfList={etfList} value={form.etf_name} onChange={handleETFSelect} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-neutral-muted mb-1">Asset Class</label>
-              <select className={INPUT} value={form.asset_class} onChange={e => set('asset_class', e.target.value)}>
-                <option>Equity</option><option>Debt</option><option>Gold</option><option>International</option>
-              </select>
+              <div className={`${INPUT} bg-surface-page cursor-default select-none ${form.asset_class ? 'text-neutral-primary' : 'text-neutral-muted'}`}>
+                {form.asset_class || 'Auto from ETF'}
+              </div>
             </div>
             <div>
               <label className="block text-xs text-neutral-muted mb-1">Ticker</label>
-              <input type="text" className={`${INPUT} uppercase`} value={form.ticker} onChange={e => set('ticker', e.target.value.toUpperCase())} placeholder="GOLDBEES" required />
+              <div className={`${INPUT} font-mono uppercase bg-surface-page cursor-default select-none ${form.ticker ? 'text-neutral-primary' : 'text-neutral-muted'}`}>
+                {form.ticker || 'Auto from ETF'}
+              </div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-neutral-muted mb-1">Qty</label>
-              <input type="number" step="0.0001" className={INPUT} value={form.qty} onChange={e => set('qty', e.target.value)} required />
+              <input type="number" step="1" min="1" className={INPUT} value={form.qty} onChange={e => set('qty', e.target.value)} required />
             </div>
             <div>
               <label className="block text-xs text-neutral-muted mb-1">Buy Price ₹</label>

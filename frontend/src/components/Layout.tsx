@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, List, TrendingUp, PieChart, BarChart2,
-  Repeat, TableProperties, LineChart, LayoutGrid, BookCheck, Shield, Settings,
+  TableProperties, LineChart, LayoutGrid, BookCheck, Shield, Settings,
   ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'

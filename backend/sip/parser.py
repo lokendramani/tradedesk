@@ -8,6 +8,7 @@ Date format: DD-Mon-YY  (e.g. 02-Jan-24)
 """
 import csv
 import io
+from decimal import Decimal
 from datetime import datetime, date
 
 REQUIRED_COLS = {'date', 'etf', 'assetclass', 'ticker', 'qty', 'price'}
