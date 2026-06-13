@@ -21,6 +21,8 @@ export const authApi = {
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
     localStorage.removeItem('portfolio_id')
+    localStorage.removeItem('admin_own_portfolio_id')
+    localStorage.removeItem('admin_view_as')
   },
 
   getUser: () => {

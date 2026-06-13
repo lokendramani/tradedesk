@@ -7,9 +7,11 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+const PUBLIC_PATHS = ['/auth/login/', '/auth/register/', '/auth/token/refresh/']
+
 client.interceptors.request.use((config) => {
-  const isAuthEndpoint = config.url?.startsWith('/auth/')
-  if (!isAuthEndpoint) {
+  const isPublicEndpoint = PUBLIC_PATHS.some(p => config.url?.startsWith(p))
+  if (!isPublicEndpoint) {
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -22,8 +24,8 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config
-    const isAuthEndpoint = original?.url?.startsWith('/auth/')
-    if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
+    const isPublicEndpoint = PUBLIC_PATHS.some(p => original?.url?.startsWith(p))
+    if (error.response?.status === 401 && !original._retry && !isPublicEndpoint) {
       original._retry = true
       try {
         const refresh = localStorage.getItem('refresh_token')

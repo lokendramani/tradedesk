@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Pencil, Trash2, Check, X, ExternalLink } from 'lucide-react'
 import { adminApi, type AdminUser } from '../../api/admin'
 import { sipApi } from '../../api/sip'
+import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, formatDate, isProfit, isLoss } from '../../utils/format'
 import type { Portfolio, Trade, SIPETFMaster } from '../../types'
 
@@ -15,13 +17,11 @@ function ETFMasterConfig() {
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState('')
 
-  // inline edit state
   const [editTicker,    setEditTicker]    = useState<string | null>(null)
   const [editName,      setEditName]      = useState('')
   const [editClass,     setEditClass]     = useState('')
   const [saving,        setSaving]        = useState(false)
 
-  // add new state
   const [showAdd,       setShowAdd]       = useState(false)
   const [newTicker,     setNewTicker]     = useState('')
   const [newName,       setNewName]       = useState('')
@@ -84,54 +84,54 @@ function ETFMasterConfig() {
   }
 
   const CELL = 'px-3 py-2.5 text-sm'
-  const INPUT_SM = 'bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 w-full'
+  const INPUT_SM = 'bg-white border border-surface-border text-neutral-primary text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand w-full'
 
   return (
-    <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden">
+    <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[#1e2330] flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
         <div>
-          <span className="text-[10px] text-gray-500 uppercase tracking-widest">ETF Master</span>
-          <span className="ml-2 text-[10px] text-gray-600">{etfs.length} entries</span>
+          <span className="text-[10px] text-neutral-muted uppercase tracking-widest">ETF Master</span>
+          <span className="ml-2 text-[10px] text-neutral-muted">{etfs.length} entries</span>
         </div>
         <button
           onClick={() => { setShowAdd(v => !v); setErr('') }}
-          className="flex items-center gap-1.5 text-xs bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-400/20 rounded px-2.5 py-1.5 transition-colors"
+          className="flex items-center gap-1.5 text-xs bg-brand/10 hover:bg-brand/20 text-brand border border-brand/20 rounded px-2.5 py-1.5 transition-colors"
         >
           <Plus size={12} /> Add ETF
         </button>
       </div>
 
       {err && (
-        <div className="px-4 py-2 text-xs text-red-400 bg-red-400/5 border-b border-[#1e2330]">{err}</div>
+        <div className="px-4 py-2 text-xs text-loss-text bg-loss-bg border-b border-surface-border">{err}</div>
       )}
 
       {/* Add row */}
       {showAdd && (
-        <div className="px-4 py-3 bg-gray-800/50 border-b border-[#1e2330] grid grid-cols-[1fr_2fr_1fr_auto] gap-2 items-end">
+        <div className="px-4 py-3 bg-surface-page border-b border-surface-border grid grid-cols-[1fr_2fr_1fr_auto] gap-2 items-end">
           <div>
-            <div className="text-[10px] text-gray-500 mb-1">Ticker</div>
+            <div className="text-[10px] text-neutral-muted mb-1">Ticker</div>
             <input className={`${INPUT_SM} uppercase`} placeholder="GOLDBEES" value={newTicker}
               onChange={e => setNewTicker(e.target.value.toUpperCase())} />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 mb-1">ETF Name</div>
+            <div className="text-[10px] text-neutral-muted mb-1">ETF Name</div>
             <input className={INPUT_SM} placeholder="Gold BEES" value={newName}
               onChange={e => setNewName(e.target.value)} />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 mb-1">Asset Class</div>
+            <div className="text-[10px] text-neutral-muted mb-1">Asset Class</div>
             <select className={INPUT_SM} value={newClass} onChange={e => setNewClass(e.target.value)}>
               <option>Equity</option><option>Debt</option><option>International</option>
             </select>
           </div>
           <div className="flex gap-1.5 pb-0.5">
             <button onClick={handleAdd} disabled={adding}
-              className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded p-1.5 disabled:opacity-50 transition-colors">
+              className="bg-brand/10 hover:bg-brand/20 text-brand rounded p-1.5 disabled:opacity-50 transition-colors">
               <Check size={13} />
             </button>
             <button onClick={() => { setShowAdd(false); setErr('') }}
-              className="bg-gray-700 hover:bg-gray-600 text-gray-400 rounded p-1.5 transition-colors">
+              className="bg-surface-page hover:bg-surface-border text-neutral-muted rounded p-1.5 transition-colors border border-surface-border">
               <X size={13} />
             </button>
           </div>
@@ -140,12 +140,12 @@ function ETFMasterConfig() {
 
       {/* Table */}
       {loading ? (
-        <div className="py-10 text-center text-gray-600 text-sm animate-pulse">Loading...</div>
+        <div className="py-10 text-center text-neutral-muted text-sm animate-pulse">Loading...</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono">
             <thead>
-              <tr className="border-b border-[#1e2330] text-[10px] text-gray-500 uppercase tracking-widest">
+              <tr className="border-b border-surface-border text-[10px] text-neutral-muted uppercase tracking-widest">
                 <th className="text-left px-3 py-3">Ticker</th>
                 <th className="text-left px-3 py-3">ETF Name</th>
                 <th className="text-left px-3 py-3">Asset Class</th>
@@ -154,13 +154,13 @@ function ETFMasterConfig() {
             </thead>
             <tbody>
               {etfs.map(etf => (
-                <tr key={etf.ticker} className="border-b border-[#1e2330]/50 hover:bg-gray-800/30 transition-colors">
-                  <td className={`${CELL} text-blue-400 font-semibold`}>{etf.ticker}</td>
+                <tr key={etf.ticker} className="border-b border-surface-border hover:bg-surface-page transition-colors">
+                  <td className={`${CELL} text-brand font-semibold`}>{etf.ticker}</td>
                   <td className={CELL}>
                     {editTicker === etf.ticker ? (
                       <input className={INPUT_SM} value={editName} onChange={e => setEditName(e.target.value)} autoFocus />
                     ) : (
-                      <span className="text-gray-200">{etf.etf_name}</span>
+                      <span className="text-neutral-primary">{etf.etf_name}</span>
                     )}
                   </td>
                   <td className={CELL}>
@@ -169,29 +169,29 @@ function ETFMasterConfig() {
                         <option>Equity</option><option>Debt</option><option>International</option>
                       </select>
                     ) : (
-                      <span className="text-gray-400">{etf.asset_class}</span>
+                      <span className="text-neutral-muted">{etf.asset_class}</span>
                     )}
                   </td>
                   <td className={`${CELL} text-right`}>
                     {editTicker === etf.ticker ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <button onClick={saveEdit} disabled={saving}
-                          className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded p-1.5 disabled:opacity-50 transition-colors">
+                          className="bg-brand/10 hover:bg-brand/20 text-brand rounded p-1.5 disabled:opacity-50 transition-colors">
                           <Check size={12} />
                         </button>
                         <button onClick={cancelEdit}
-                          className="bg-gray-700 hover:bg-gray-600 text-gray-400 rounded p-1.5 transition-colors">
+                          className="bg-surface-page hover:bg-surface-border text-neutral-muted rounded p-1.5 transition-colors border border-surface-border">
                           <X size={12} />
                         </button>
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-1.5">
                         <button onClick={() => startEdit(etf)}
-                          className="text-gray-500 hover:text-blue-400 transition-colors p-1">
+                          className="text-neutral-muted hover:text-brand transition-colors p-1">
                           <Pencil size={13} />
                         </button>
                         <button onClick={() => handleDelete(etf.ticker)}
-                          className="text-gray-500 hover:text-red-400 transition-colors p-1">
+                          className="text-neutral-muted hover:text-loss-text transition-colors p-1">
                           <Trash2 size={13} />
                         </button>
                       </div>
@@ -209,6 +209,9 @@ function ETFMasterConfig() {
 
 // ─── Main Admin Panel ─────────────────────────────────────────────────────────
 export default function AdminPanel() {
+  const navigate = useNavigate()
+  const { setViewAs } = useAuthStore()
+
   const [tab, setTab] = useState<Tab>('users')
 
   const [users,     setUsers]     = useState<AdminUser[]>([])
@@ -253,8 +256,8 @@ export default function AdminPanel() {
   )
 
   const TAB_BASE = 'px-4 py-2 text-xs font-semibold uppercase tracking-widest border-b-2 transition-colors'
-  const TAB_ACTIVE = 'border-blue-400 text-blue-400'
-  const TAB_INACTIVE = 'border-transparent text-gray-500 hover:text-gray-300'
+  const TAB_ACTIVE = 'border-brand text-brand'
+  const TAB_INACTIVE = 'border-transparent text-neutral-muted hover:text-neutral-primary'
 
   return (
     <div className="p-6 space-y-4">
@@ -262,19 +265,19 @@ export default function AdminPanel() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-100">Admin Panel</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{users.length} registered users</p>
+          <h1 className="text-xl font-display font-bold text-neutral-primary">Admin Panel</h1>
+          <p className="text-xs text-neutral-muted mt-0.5">{users.length} registered users</p>
         </div>
         {tab === 'users' && (
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search users..."
-            className="bg-gray-900 border border-[#1e2330] text-gray-300 text-xs rounded px-3 py-2 w-56 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
+            className="bg-white border border-surface-border text-neutral-primary text-xs rounded px-3 py-2 w-56 placeholder-neutral-muted focus:outline-none focus:border-brand transition-colors"
           />
         )}
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-[#1e2330] gap-0">
+      <div className="flex border-b border-surface-border gap-0">
         <button className={`${TAB_BASE} ${tab === 'users'  ? TAB_ACTIVE : TAB_INACTIVE}`} onClick={() => setTab('users')}>
           Users
         </button>
@@ -289,90 +292,94 @@ export default function AdminPanel() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
             {/* Users column */}
-            <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b border-[#1e2330] text-[10px] text-gray-500 uppercase tracking-widest">Users</div>
-              <div className="overflow-y-auto max-h-96 divide-y divide-[#1e2330]">
+            <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-surface-border text-[10px] text-neutral-muted uppercase tracking-widest">Users</div>
+              <div className="overflow-y-auto max-h-96 divide-y divide-surface-border">
                 {loading ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm animate-pulse">Loading...</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm animate-pulse">Loading...</div>
                 ) : filtered.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm">No users found</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm">No users found</div>
                 ) : filtered.map(u => (
                   <button key={u.id} onClick={() => handleSelectUser(u)}
                     className={`w-full text-left px-4 py-3 transition-colors ${
-                      selectedUser?.id === u.id ? 'bg-blue-400/10 border-l-2 border-l-blue-400' : 'hover:bg-gray-800/50 border-l-2 border-l-transparent'
+                      selectedUser?.id === u.id
+                        ? 'bg-brand/5 border-l-2 border-l-brand'
+                        : 'hover:bg-surface-page border-l-2 border-l-transparent'
                     }`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-gray-200 font-semibold truncate">{u.full_name}</span>
+                      <span className="text-sm text-neutral-primary font-semibold truncate">{u.full_name}</span>
                       {u.role === 'ADMIN' && (
-                        <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded tracking-wider flex-shrink-0">ADMIN</span>
+                        <span className="text-[9px] bg-brand/10 text-brand px-1.5 py-0.5 rounded tracking-wider flex-shrink-0">ADMIN</span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5 truncate">{u.email}</div>
-                    <div className="text-[10px] text-gray-600 mt-0.5">Joined {u.created_at}</div>
+                    <div className="text-xs text-neutral-muted mt-0.5 truncate">{u.email}</div>
+                    <div className="text-[10px] text-neutral-muted mt-0.5">Joined {u.created_at}</div>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Portfolios column */}
-            <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b border-[#1e2330] text-[10px] text-gray-500 uppercase tracking-widest">
+            <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-surface-border text-[10px] text-neutral-muted uppercase tracking-widest">
                 Portfolios {selectedUser ? `— ${selectedUser.full_name}` : ''}
               </div>
-              <div className="overflow-y-auto max-h-96 divide-y divide-[#1e2330]">
+              <div className="overflow-y-auto max-h-96 divide-y divide-surface-border">
                 {!selectedUser ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm">Select a user</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm">Select a user</div>
                 ) : loadingPortfolios ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm animate-pulse">Loading...</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm animate-pulse">Loading...</div>
                 ) : portfolios.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm">No portfolios</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm">No portfolios</div>
                 ) : portfolios.map(p => (
                   <button key={p.id} onClick={() => handleSelectPortfolio(p)}
                     className={`w-full text-left px-4 py-3 transition-colors ${
-                      selectedPortfolio?.id === p.id ? 'bg-blue-400/10 border-l-2 border-l-blue-400' : 'hover:bg-gray-800/50 border-l-2 border-l-transparent'
+                      selectedPortfolio?.id === p.id
+                        ? 'bg-brand/5 border-l-2 border-l-brand'
+                        : 'hover:bg-surface-page border-l-2 border-l-transparent'
                     }`}>
-                    <div className="text-sm text-gray-200 font-semibold">{p.name}</div>
+                    <div className="text-sm text-neutral-primary font-semibold">{p.name}</div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{p.type}</span>
-                      <span className="text-[10px] text-gray-500">{p.currency}</span>
+                      <span className="text-[10px] bg-surface-page text-neutral-muted px-1.5 py-0.5 rounded border border-surface-border">{p.type}</span>
+                      <span className="text-[10px] text-neutral-muted">{p.currency}</span>
                     </div>
-                    <div className="text-xs text-gray-600 mt-1">Capital: {formatCurrency(p.starting_capital)}</div>
+                    <div className="text-xs text-neutral-muted mt-1">Capital: {formatCurrency(p.starting_capital)}</div>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Trade summary column */}
-            <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b border-[#1e2330] flex items-center justify-between">
-                <span className="text-[10px] text-gray-500 uppercase tracking-widest">
+            <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+                <span className="text-[10px] text-neutral-muted uppercase tracking-widest">
                   Trades {selectedPortfolio ? `— ${selectedPortfolio.name}` : ''}
                 </span>
-                {trades.length > 0 && <span className="text-[10px] text-gray-600">{trades.length} total</span>}
+                {trades.length > 0 && <span className="text-[10px] text-neutral-muted">{trades.length} total</span>}
               </div>
-              <div className="overflow-y-auto max-h-96 divide-y divide-[#1e2330]">
+              <div className="overflow-y-auto max-h-96 divide-y divide-surface-border">
                 {!selectedPortfolio ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm">Select a portfolio</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm">Select a portfolio</div>
                 ) : loadingTrades ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm animate-pulse">Loading...</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm animate-pulse">Loading...</div>
                 ) : trades.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-gray-600 text-sm">No trades yet</div>
+                  <div className="px-4 py-8 text-center text-neutral-muted text-sm">No trades yet</div>
                 ) : trades.map(t => (
                   <div key={t.id} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-gray-200 font-semibold font-mono">{t.scrip_name}</span>
+                      <span className="text-sm text-neutral-primary font-semibold font-mono">{t.scrip_name}</span>
                       <span className={`text-xs font-mono ${
                         t.is_closed
-                          ? (isProfit(t.net_income) ? 'text-emerald-400' : isLoss(t.net_income) ? 'text-red-400' : 'text-gray-500')
-                          : 'text-blue-400'
+                          ? (isProfit(t.net_income) ? 'text-profit-text' : isLoss(t.net_income) ? 'text-loss-text' : 'text-neutral-muted')
+                          : 'text-brand'
                       }`}>
                         {t.is_closed ? (t.net_income !== null ? formatCurrency(t.net_income) : '—') : 'OPEN'}
                       </span>
                     </div>
                     <div className="flex items-center gap-3 mt-0.5">
-                      <span className={`text-[10px] ${t.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>{t.direction}</span>
-                      <span className="text-[10px] text-gray-600">{formatDate(t.entry_date)}</span>
-                      <span className="text-[10px] text-gray-600">{SEG_LABEL[t.segment] ?? t.segment}</span>
+                      <span className={`text-[10px] ${t.direction === 'LONG' ? 'text-profit-text' : 'text-loss-text'}`}>{t.direction}</span>
+                      <span className="text-[10px] text-neutral-muted">{formatDate(t.entry_date)}</span>
+                      <span className="text-[10px] text-neutral-muted">{SEG_LABEL[t.segment] ?? t.segment}</span>
                     </div>
                   </div>
                 ))}
@@ -382,54 +389,65 @@ export default function AdminPanel() {
 
           {/* Full read-only trade table */}
           {selectedPortfolio && (
-            <div className="bg-gray-900 border border-[#1e2330] rounded-lg overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#1e2330] flex items-center justify-between">
-                <span className="text-[10px] text-gray-500 uppercase tracking-widest">
+            <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden">
+              <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+                <span className="text-[10px] text-neutral-muted uppercase tracking-widest">
                   Full Trade Log — {selectedPortfolio.name} (Read Only)
                 </span>
-                {trades.length > 0 && <span className="text-[10px] text-gray-600">{trades.length} trades</span>}
+                <div className="flex items-center gap-3">
+                  {trades.length > 0 && <span className="text-[10px] text-neutral-muted">{trades.length} trades</span>}
+                  <button
+                    onClick={() => {
+                      setViewAs(selectedPortfolio.id, selectedUser!.full_name)
+                      navigate('/dashboard')
+                    }}
+                    className="flex items-center gap-1.5 text-xs bg-brand/10 hover:bg-brand/20 text-brand border border-brand/20 rounded px-2.5 py-1.5 transition-colors"
+                  >
+                    <ExternalLink size={11} /> Open Dashboard
+                  </button>
+                </div>
               </div>
               {loadingTrades ? (
-                <div className="py-12 text-center text-gray-600 text-sm animate-pulse">Loading trades...</div>
+                <div className="py-12 text-center text-neutral-muted text-sm animate-pulse">Loading trades...</div>
               ) : trades.length === 0 ? (
-                <div className="py-12 text-center text-gray-600 text-sm">No trades in this portfolio</div>
+                <div className="py-12 text-center text-neutral-muted text-sm">No trades in this portfolio</div>
               ) : (
                 <div className="overflow-x-auto overflow-y-auto max-h-[50vh]">
                   <table className="w-full text-xs font-mono">
-                    <thead className="sticky top-0 z-20 bg-gray-900">
-                      <tr className="border-b border-[#1e2330]">
+                    <thead className="sticky top-0 z-20 bg-surface-card">
+                      <tr className="border-b border-surface-border">
                         {['Scrip','Seg','Dir','Entry Date','Entry ₹','Qty','Close Date','Close ₹','Gross P&L','Charges','Net ₹','R:R','Status'].map(h => (
-                          <th key={h} className="text-left text-[10px] text-gray-600 uppercase tracking-widest px-3 py-3 whitespace-nowrap bg-gray-900">{h}</th>
+                          <th key={h} className="text-left text-[10px] text-neutral-muted uppercase tracking-widest px-3 py-3 whitespace-nowrap bg-surface-card">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {trades.map(t => (
-                        <tr key={t.id} className="border-b border-[#1e2330]/50 hover:bg-gray-800/30 transition-colors">
-                          <td className="px-3 py-2 font-semibold text-gray-200 whitespace-nowrap">{t.scrip_name}</td>
-                          <td className="px-3 py-2 text-gray-400">{SEG_LABEL[t.segment] ?? t.segment}</td>
+                        <tr key={t.id} className="border-b border-surface-border hover:bg-surface-page transition-colors">
+                          <td className="px-3 py-2 font-semibold text-neutral-primary whitespace-nowrap">{t.scrip_name}</td>
+                          <td className="px-3 py-2 text-neutral-muted">{SEG_LABEL[t.segment] ?? t.segment}</td>
                           <td className="px-3 py-2">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.direction === 'LONG' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.direction === 'LONG' ? 'bg-profit-bg text-profit-text' : 'bg-loss-bg text-loss-text'}`}>
                               {t.direction}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{formatDate(t.entry_date)}</td>
-                          <td className="px-3 py-2 text-gray-300">{formatCurrency(t.entry_price)}</td>
-                          <td className="px-3 py-2 text-gray-300">{t.quantity}</td>
-                          <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{t.close_date ? formatDate(t.close_date) : '—'}</td>
-                          <td className="px-3 py-2 text-gray-300">{t.close_price ? formatCurrency(t.close_price) : '—'}</td>
-                          <td className={`px-3 py-2 ${isProfit(t.gross_pl) ? 'text-emerald-400' : isLoss(t.gross_pl) ? 'text-red-400' : 'text-gray-500'}`}>
+                          <td className="px-3 py-2 text-neutral-muted whitespace-nowrap">{formatDate(t.entry_date)}</td>
+                          <td className="px-3 py-2 text-neutral-primary">{formatCurrency(t.entry_price)}</td>
+                          <td className="px-3 py-2 text-neutral-primary">{t.quantity}</td>
+                          <td className="px-3 py-2 text-neutral-muted whitespace-nowrap">{t.close_date ? formatDate(t.close_date) : '—'}</td>
+                          <td className="px-3 py-2 text-neutral-primary">{t.close_price ? formatCurrency(t.close_price) : '—'}</td>
+                          <td className={`px-3 py-2 ${isProfit(t.gross_pl) ? 'text-profit-text' : isLoss(t.gross_pl) ? 'text-loss-text' : 'text-neutral-muted'}`}>
                             {t.gross_pl !== null ? formatCurrency(t.gross_pl) : '—'}
                           </td>
-                          <td className="px-3 py-2 text-gray-500">{t.charges ? formatCurrency(t.charges) : '—'}</td>
-                          <td className={`px-3 py-2 font-semibold ${isProfit(t.net_income) ? 'text-emerald-400' : isLoss(t.net_income) ? 'text-red-400' : 'text-gray-500'}`}>
+                          <td className="px-3 py-2 text-neutral-muted">{t.charges ? formatCurrency(t.charges) : '—'}</td>
+                          <td className={`px-3 py-2 font-semibold ${isProfit(t.net_income) ? 'text-profit-text' : isLoss(t.net_income) ? 'text-loss-text' : 'text-neutral-muted'}`}>
                             {t.net_income !== null ? formatCurrency(t.net_income) : '—'}
                           </td>
-                          <td className="px-3 py-2 text-gray-400">{t.risk_reward ? `${parseFloat(String(t.risk_reward)).toFixed(2)}x` : '—'}</td>
+                          <td className="px-3 py-2 text-neutral-muted">{t.risk_reward ? `${parseFloat(String(t.risk_reward)).toFixed(2)}x` : '—'}</td>
                           <td className="px-3 py-2">
                             {t.is_closed
-                              ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-500">Closed</span>
-                              : <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-400/10 text-blue-400">Open</span>}
+                              ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-page text-neutral-muted border border-surface-border">Closed</span>
+                              : <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand/10 text-brand">Open</span>}
                           </td>
                         </tr>
                       ))}
@@ -445,7 +463,7 @@ export default function AdminPanel() {
       {/* ── Configuration Tab ──────────────────────────────────────────────────── */}
       {tab === 'config' && (
         <div className="space-y-4">
-          <p className="text-xs text-gray-500">Manage static reference data used across the app.</p>
+          <p className="text-xs text-neutral-muted">Manage static reference data used across the app.</p>
           <ETFMasterConfig />
         </div>
       )}

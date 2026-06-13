@@ -56,7 +56,7 @@ function getInitials(name?: string | null) {
 }
 
 export default function Layout() {
-  const { user, logout, portfolioId } = useAuthStore()
+  const { user, logout, portfolioId, adminViewingAs, clearViewAs } = useAuthStore()
   const navigate = useNavigate()
 
   const [collapsed, setCollapsed] = useState(
@@ -202,8 +202,23 @@ export default function Layout() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto bg-surface-page">
-          <Outlet />
+        <main className="flex-1 overflow-hidden bg-surface-page flex flex-col">
+          {user?.role === 'ADMIN' && adminViewingAs && (
+            <div className="bg-brand/10 border-b border-brand/20 px-4 py-2 flex items-center justify-between flex-shrink-0">
+              <span className="text-sm text-brand font-medium">
+                Viewing <strong>{adminViewingAs}</strong>'s portfolio
+              </span>
+              <button
+                onClick={() => { clearViewAs(); navigate('/dashboard') }}
+                className="text-xs bg-brand text-white px-3 py-1.5 rounded-md hover:bg-brand/90 transition-colors font-medium"
+              >
+                Return to my portfolio
+              </button>
+            </div>
+          )}
+          <div className="flex-1 overflow-auto">
+            <Outlet />
+          </div>
         </main>
 
       </div>

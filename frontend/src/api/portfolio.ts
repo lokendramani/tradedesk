@@ -10,8 +10,9 @@ const DEFAULT_PORTFOLIO = {
 } as const
 
 export const portfolioApi = {
-  getAll: async (): Promise<Portfolio[]> => {
-    const res = await client.get('/portfolios/')
+  getAll: async (forUserId?: string): Promise<Portfolio[]> => {
+    const url = forUserId ? `/portfolios/?user_id=${forUserId}` : '/portfolios/'
+    const res = await client.get(url)
     return extractList<Portfolio>(res)
   },
 
