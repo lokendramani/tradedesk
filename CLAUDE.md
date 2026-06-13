@@ -119,7 +119,8 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
   `worst_case_capital`, `type` (TRADING | ETF), `currency`.
 - `GET/POST /api/portfolios/` — list/create
 - `GET/PUT/DELETE /api/portfolios/<id>/` — detail
-- Admin can pass `?user_id=<uuid>` to list any user's portfolios.
+- `GET /api/portfolios/?user_id=<uuid>` — admin only: list a specific user's portfolios.
+- Without `?user_id`, always scoped to the requesting user (even for admin).
 - On first login the frontend auto-creates a default portfolio if none exists.
 
 ### `trades`
@@ -172,7 +173,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 | `/equity` | Equity/Equity | Full-screen equity curve with segment/period filters |
 | `/segments` | Segments/Segments | Per-segment stats cards |
 | `/mf` | MFDashboard/MFDashboard | MF summary + CAS PDF upload + schemes/txns tables |
-| `/admin` | Admin/AdminPanel | User list → portfolio picker → trade viewer (ADMIN only) |
+| `/admin` | Admin/AdminPanel | Two tabs: Users (user list → portfolio picker → trade log) and Configuration (ETF master CRUD). ADMIN only. |
 | `/sip/trades` | SIPJournal/SIPTrades | Raw SIP trade table + CSV import + add trade |
 | `/sip/holdings` | SIPJournal/SIPHoldings | Active holdings table + 2 pie charts + FIFO sell modal |
 | `/sip/booked-pl` | SIPJournal/SIPBookedPL | Booked P&L: ETF summary table + trade-wise detail table |
@@ -184,12 +185,28 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 - Auth state lives in Zustand `useAuthStore` (persisted via localStorage for
   tokens; portfolio ID also stored in localStorage)
 
+### Admin "View As" Feature
+Admin users can impersonate any user's portfolio context from the Admin Panel:
+1. Admin Panel → Users tab → select user → select portfolio → **Open Dashboard** button appears in the Full Trade Log header.
+2. Clicking it calls `setViewAs(portfolioId, userName)` in `authStore`, switches `localStorage.portfolio_id` to the selected portfolio, and navigates to `/dashboard`.
+3. A blue banner "Viewing **[name]**'s portfolio" appears at the top of every page while in view-as mode.
+4. **Return to my portfolio** button in the banner calls `clearViewAs()`, which restores the admin's own portfolio from `localStorage.admin_own_portfolio_id`.
+
+**localStorage keys used by view-as:**
+- `admin_own_portfolio_id` — admin's real portfolio ID, saved on first `setViewAs()` call
+- `admin_view_as` — the name being viewed as (cleared on `clearViewAs()` and `logout()`)
+
+**authStore methods:**
+- `setViewAs(portfolioId, userName)` — enter view-as mode
+- `clearViewAs()` — exit view-as mode, restore own portfolio
+- `adminViewingAs: string | null` — reactive state for the banner
+
 ### API Layer (`frontend/src/api/`)
 | File | Purpose |
 |---|---|
-| `client.ts` | Axios instance, base URL `/api`, JWT Bearer header injection, 401 auto-logout |
+| `client.ts` | Axios instance, base URL `/api`, JWT Bearer header injection, 401 auto-logout. JWT is skipped only for the three public auth endpoints (`/auth/login/`, `/auth/register/`, `/auth/token/refresh/`) — all other `/auth/*` routes (e.g. `/auth/admin/users/`) DO send the token. |
 | `auth.ts` | login, register, logout, getUser, refreshToken |
-| `portfolio.ts` | CRUD for portfolios |
+| `portfolio.ts` | CRUD for portfolios. `getAll(forUserId?)` accepts optional user ID — pass current user's ID so admin always fetches their own portfolios during init (backend scopes to that user). |
 | `trades.ts` | trades CRUD + import + stats + equity/monthly/closedMonths |
 | `mf.ts` | CAS import + dashboard + schemes + transactions |
 | `admin.ts` | Admin: list users, user portfolios, portfolio trades |
@@ -215,6 +232,8 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 8. **CAS parser is format-agnostic** — transactions are detected by structure
    (date token + four numeric tokens), not by hardcoded fund names. This
    makes it resilient to new fund houses without code changes.
+9. **Admin portfolio scoping** — `portfolioApi.getAll()` in `authStore.init()` always passes the current user's ID as `?user_id=`. Without this, the backend returns all users' portfolios for admin accounts (sorted by `-created_at`), which would cause admin to initialise with a wrong portfolio. With `?user_id=`, admin always boots into their own portfolio.
+10. **JWT not sent only for public auth endpoints** — `client.ts` skips the `Authorization` header for exactly three paths: `/auth/login/`, `/auth/register/`, `/auth/token/refresh/`. All other routes under `/auth/` (e.g. `/auth/admin/users/`) still receive the token.
 
 ---
 
