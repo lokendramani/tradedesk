@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/auth'
 import { useAuthStore } from '../../store/authStore'
 import { portfolioApi } from '../../api/portfolio'
+import { extractErrorMessage } from '../../utils/format'
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? (
@@ -60,8 +61,8 @@ export default function Register() {
       setPortfolioId(p.id)
       navigate('/dashboard')
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { message?: string } }; message?: string }
-      setError(ax.response?.data?.message || 'Registration failed. Please try again.')
+      const ax = err as { response?: { data?: unknown } }
+      setError(extractErrorMessage(ax.response?.data) || 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }

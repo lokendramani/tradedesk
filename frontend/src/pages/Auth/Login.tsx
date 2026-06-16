@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/auth'
 import { useAuthStore } from '../../store/authStore'
 import { portfolioApi } from '../../api/portfolio'
+import { extractErrorMessage } from '../../utils/format'
 
 export default function Login() {
   const navigate  = useNavigate()
@@ -35,8 +36,8 @@ export default function Login() {
       }
       navigate('/dashboard')
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { message?: string } }; message?: string }
-      const msg = ax.response?.data?.message
+      const ax = err as { response?: { data?: unknown }; message?: string }
+      const msg = extractErrorMessage(ax.response?.data)
       setError(
         msg ||
           (ax.message?.includes('Network Error')
