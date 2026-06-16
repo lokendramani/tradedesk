@@ -312,6 +312,18 @@ pdfplumber==0.11.4        # CAS PDF parsing
 
 ---
 
+## Issue Workflow
+
+When asked to "work on issue #N":
+1. Read the issue details using `gh issue view N`
+2. Write an implementation plan — do not write code yet
+3. Wait for plan approval
+4. After approval, create a branch: `issue-N-short-slug`
+5. Implement the changes and run relevant tests
+6. Include "Fixes #N" in the commit message
+7. Push the branch (`git push -u origin issue-N-short-slug`)
+8. Do NOT merge into main — that is a manual step
+
 ## AI CHAT FEATURE
 
 **Status:** Implemented
