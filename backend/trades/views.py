@@ -440,6 +440,14 @@ def equity_curve(request, portfolio_id):
             }
             for p in month_points
         ]
+    else:
+        # Prepend the starting-capital baseline so the frontend can compute
+        # totalReturn = lastCapital - firstCapital correctly (without this the
+        # first trade's P&L would be excluded from the total return figure).
+        if points:
+            first_date = points[0]['date']
+            baseline = {'date': first_date, 'capital': str(portfolio.starting_capital)}
+            points = [baseline] + points
     return Response({'success': True, 'data': points})
 
 @api_view(['GET'])
