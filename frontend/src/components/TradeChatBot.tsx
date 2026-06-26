@@ -148,7 +148,7 @@ export default function TradeChatBot({ portfolioId }: Props) {
         <div
           style={{
             position:      'fixed',
-            bottom:        '84px',
+            bottom:        '24px',
             right:         '24px',
             width:         '360px',
             height:        '500px',
