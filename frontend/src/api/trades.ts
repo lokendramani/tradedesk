@@ -1,5 +1,5 @@
 import client from './client'
-import type { Trade, Stats, EquityPoint, MonthlyPnl, TradeFilter } from '../types'
+import type { Trade, Stats, EquityPoint, MonthlyPnl, MonthlySegmentBreakdown, TradeFilter } from '../types'
 
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
@@ -95,6 +95,11 @@ export const tradesApi = {
 
   getClosedMonths: async (portfolioId: string): Promise<string[]> => {
     const res = await client.get(`/portfolios/${portfolioId}/stats/closed-months/`)
+    return res.data.data
+  },
+
+  getMonthlySegmentBreakdown: async (portfolioId: string): Promise<MonthlySegmentBreakdown[]> => {
+    const res = await client.get(`/portfolios/${portfolioId}/stats/monthly-segment-breakdown/`)
     return res.data.data
   },
 

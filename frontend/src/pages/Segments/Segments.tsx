@@ -1,11 +1,38 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
+import { Download } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { tradesApi } from '../../api/trades'
 import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, formatPercent, isProfit, isLoss } from '../../utils/format'
-import type { Stats, EquityPoint } from '../../types'
+import type { Stats, EquityPoint, MonthlySegmentBreakdown, MonthlySegmentStats } from '../../types'
+
+function computeAllTime(rows: MonthlySegmentBreakdown[], key: 'overall' | 'EQUITY' | 'COMMODITY' | 'F_AND_O'): MonthlySegmentStats | null {
+  const segs = rows.map(r => r[key]).filter((s): s is MonthlySegmentStats => s !== null)
+  if (!segs.length) return null
+  const trades          = segs.reduce((a, s) => a + s.trades, 0)
+  const trade_in_profit = segs.reduce((a, s) => a + s.trade_in_profit, 0)
+  const trade_in_loss   = segs.reduce((a, s) => a + s.trade_in_loss, 0)
+  const net_income      = segs.reduce((a, s) => a + s.net_income, 0)
+  // weighted average: Σ(avg * count) / Σcount gives exact per-trade mean
+  const sumProfit = segs.reduce((a, s) => a + (s.avg_profit ?? 0) * s.trade_in_profit, 0)
+  const sumLoss   = segs.reduce((a, s) => a + (s.avg_loss   ?? 0) * s.trade_in_loss,  0)
+  const avg_profit = trade_in_profit > 0 ? sumProfit / trade_in_profit : null
+  const avg_loss   = trade_in_loss   > 0 ? sumLoss   / trade_in_loss   : null
+  return {
+    net_income:      Math.round(net_income * 100) / 100,
+    trades,
+    trade_in_profit,
+    trade_in_loss,
+    win_rate:      trades > 0 ? Math.round(trade_in_profit / trades * 10000) / 100 : 0,
+    avg_per_trade: trades > 0 ? Math.round(net_income / trades * 100) / 100 : 0,
+    avg_profit:    avg_profit != null ? Math.round(avg_profit * 100) / 100 : null,
+    avg_loss:      avg_loss   != null ? Math.round(avg_loss   * 100) / 100 : null,
+    actual_rr:     avg_profit != null && avg_loss != null && avg_loss !== 0
+                     ? Math.round(Math.abs(avg_profit / avg_loss) * 100) / 100 : null,
+  }
+}
 
 const SEGMENTS = ['Overall', 'EQUITY', 'COMMODITY', 'F_AND_O'] as const
 type Segment = typeof SEGMENTS[number]
@@ -52,10 +79,12 @@ export default function Segments() {
   const [stats,        setStats]        = useState<Stats | null>(null)
   const [equity,       setEquity]       = useState<EquityPoint[]>([])
   const [loading,      setLoading]      = useState(true)
+  const [breakdown,    setBreakdown]    = useState<MonthlySegmentBreakdown[]>([])
 
   useEffect(() => {
     if (!portfolioId) return
     tradesApi.getClosedMonths(portfolioId).then(setClosedMonths).catch(() => {})
+    tradesApi.getMonthlySegmentBreakdown(portfolioId).then(setBreakdown).catch(() => {})
   }, [portfolioId])
 
   const load = useCallback(async () => {
@@ -92,6 +121,55 @@ export default function Segments() {
 
   const winRate  = parseFloat(stats?.win_rate ?? '0')
   const netIncome = stats?.total_net_income ?? '0'
+
+  const downloadBreakdownCsv = () => {
+    const headers = ['Month', 'Segment', 'Profit/Loss', 'Trades', 'In Loss', 'In Profit', 'Win%', 'Avg/Trade', 'Avg Profit', 'Avg Loss', 'R:R']
+    const rows: string[][] = [headers]
+    const SEG_LABELS_CSV: Record<string, string> = { overall: 'Overall', EQUITY: 'Equity', COMMODITY: 'Commodity', F_AND_O: 'F&O' }
+    const allTimeKeys: ['overall' | 'EQUITY' | 'COMMODITY' | 'F_AND_O', string][] = [
+      ['overall', 'Overall'], ['EQUITY', 'Equity'], ['COMMODITY', 'Commodity'], ['F_AND_O', 'F&O'],
+    ]
+    allTimeKeys.forEach(([key, label]) => {
+      const s = computeAllTime(breakdown, key)
+      if (!s) return
+      rows.push([
+        'All Time', label,
+        String(s.net_income), String(s.trades), String(s.trade_in_loss), String(s.trade_in_profit),
+        s.win_rate.toFixed(2), String(s.avg_per_trade),
+        s.avg_profit != null ? String(s.avg_profit) : '',
+        s.avg_loss   != null ? String(s.avg_loss)   : '',
+        s.actual_rr  != null ? s.actual_rr.toFixed(2) : '',
+      ])
+    })
+    breakdown.forEach((row) => {
+      const [y, mo] = row.month.split('-').map(Number)
+      const label = new Date(y, mo - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+      const segs: [string, MonthlySegmentStats | null][] = [
+        ['overall', row.overall], ['EQUITY', row.EQUITY], ['COMMODITY', row.COMMODITY], ['F_AND_O', row.F_AND_O],
+      ]
+      segs.forEach(([key, s]) => {
+        if (!s) return
+        rows.push([
+          label, SEG_LABELS_CSV[key],
+          String(s.net_income), String(s.trades), String(s.trade_in_loss), String(s.trade_in_profit),
+          s.win_rate.toFixed(2), String(s.avg_per_trade),
+          s.avg_profit != null ? String(s.avg_profit) : '',
+          s.avg_loss   != null ? String(s.avg_loss)   : '',
+          s.actual_rr  != null ? s.actual_rr.toFixed(2) : '',
+        ])
+      })
+    })
+    const csv  = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url
+    a.download = 'segment_monthly_breakdown.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -219,6 +297,135 @@ export default function Segments() {
           </div>
         )}
       </div>
+
+      {/* Monthly cross-segment breakdown table */}
+      {breakdown.length > 0 && (
+        <div className="bg-white border border-surface-border rounded-lg p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-[11px] font-semibold text-neutral-muted uppercase tracking-wider">
+              Monthly Breakdown — All Segments
+            </div>
+            <button
+              onClick={downloadBreakdownCsv}
+              className="flex items-center gap-1.5 text-xs text-neutral-muted hover:text-brand border border-surface-border hover:border-brand rounded-lg px-3 py-1.5 transition-colors"
+            >
+              <Download size={13} />
+              CSV
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-neutral-muted uppercase tracking-wider bg-surface-page border-b border-surface-border">
+                  <th className="text-left px-3 py-2 whitespace-nowrap">Segment</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">Profit / Loss</th>
+                  <th className="text-right px-3 py-2">Trades</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">In Loss</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">In Profit</th>
+                  <th className="text-right px-3 py-2">Win%</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">Avg / Trade</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">Avg Profit</th>
+                  <th className="text-right px-3 py-2 whitespace-nowrap">Avg Loss</th>
+                  <th className="text-right px-3 py-2">R:R</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* ── All Time totals ── */}
+                {(() => {
+                  const allTimeSegs: [string, MonthlySegmentStats | null][] = [
+                    ['Overall',   computeAllTime(breakdown, 'overall')],
+                    ['Equity',    computeAllTime(breakdown, 'EQUITY')],
+                    ['Commodity', computeAllTime(breakdown, 'COMMODITY')],
+                    ['F&O',       computeAllTime(breakdown, 'F_AND_O')],
+                  ]
+                  return (
+                    <Fragment key="all-time">
+                      <tr className="bg-brand/5 border-b border-surface-border">
+                        <td colSpan={10} className="px-3 py-2 font-display font-semibold text-brand text-xs uppercase tracking-wider">
+                          All Time
+                        </td>
+                      </tr>
+                      {allTimeSegs.map(([label, s]) => s && (
+                        <tr key={label} className={`border-b border-surface-border ${label === 'Overall' ? 'bg-surface-page/40 font-medium' : 'hover:bg-surface-page/30'}`}>
+                          <td className="px-3 py-2 text-xs text-neutral-primary whitespace-nowrap">{label}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold whitespace-nowrap ${s.net_income >= 0 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {formatCurrency(s.net_income)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-neutral-primary">{s.trades}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-loss-text">{s.trade_in_loss}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-profit-text">{s.trade_in_profit}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${s.win_rate >= 50 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {s.win_rate.toFixed(2)}%
+                          </td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs whitespace-nowrap ${s.avg_per_trade >= 0 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {formatCurrency(s.avg_per_trade)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-profit-text whitespace-nowrap">
+                            {s.avg_profit != null ? formatCurrency(s.avg_profit) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-loss-text whitespace-nowrap">
+                            {s.avg_loss != null ? formatCurrency(s.avg_loss) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-neutral-primary">
+                            {s.actual_rr != null ? `${s.actual_rr.toFixed(2)}x` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )
+                })()}
+
+                {/* ── Per-month sections ── */}
+                {breakdown.map((row) => {
+                  const [y, mo] = row.month.split('-').map(Number)
+                  const monthLabel = new Date(y, mo - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+                  const segments: [string, MonthlySegmentStats | null][] = [
+                    ['Overall',   row.overall],
+                    ['Equity',    row.EQUITY],
+                    ['Commodity', row.COMMODITY],
+                    ['F&O',       row.F_AND_O],
+                  ]
+                  return (
+                    <Fragment key={row.month}>
+                      <tr className="border-t-2 border-surface-border bg-surface-page/60">
+                        <td colSpan={10} className="px-3 py-2 font-display font-semibold text-neutral-primary text-xs">
+                          {monthLabel}
+                        </td>
+                      </tr>
+                      {segments.map(([label, s]) => s && (
+                        <tr key={label} className={`border-b border-surface-border last:border-0 ${label === 'Overall' ? 'bg-surface-page/40 font-medium' : 'hover:bg-surface-page/30'}`}>
+                          <td className="px-3 py-2 text-xs text-neutral-primary whitespace-nowrap">{label}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold whitespace-nowrap ${s.net_income >= 0 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {formatCurrency(s.net_income)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-neutral-primary">{s.trades}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-loss-text">{s.trade_in_loss}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-profit-text">{s.trade_in_profit}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${s.win_rate >= 50 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {s.win_rate.toFixed(2)}%
+                          </td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs whitespace-nowrap ${s.avg_per_trade >= 0 ? 'text-profit-text' : 'text-loss-text'}`}>
+                            {formatCurrency(s.avg_per_trade)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-profit-text whitespace-nowrap">
+                            {s.avg_profit != null ? formatCurrency(s.avg_profit) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-loss-text whitespace-nowrap">
+                            {s.avg_loss != null ? formatCurrency(s.avg_loss) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-neutral-primary">
+                            {s.actual_rr != null ? `${s.actual_rr.toFixed(2)}x` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
     </div>
   )
