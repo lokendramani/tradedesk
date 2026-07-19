@@ -142,6 +142,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
   - `GET   /stats/equity-curve/` — equity curve points
   - `GET   /stats/monthly-pnl/` — monthly net P&L array
   - `GET   /stats/closed-months/` — list of months that have closed trades
+  - `GET   /stats/monthly-segment-breakdown/` — per-month stats (net income, trades, win rate, avg profit/loss, R:R) broken down by Overall + EQUITY + COMMODITY + F_AND_O, newest month first
 
 **Import modes** (`mode` param on `/trades/import/` and `/trades/bulk/`):
 - `smart` (default) — deduplicate against existing trades via O(1) set lookup
@@ -171,7 +172,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 | `/dashboard` | Dashboard/Dashboard | Stats grid + equity curve + charts |
 | `/trades` | Trades/Trades | Trade log table, add/edit/close modals, CSV import wizard |
 | `/equity` | Equity/Equity | Full-screen equity curve with segment/period filters |
-| `/segments` | Segments/Segments | Per-segment stats cards |
+| `/segments` | Segments/Segments | Per-segment stats cards + Monthly Breakdown table (all-time totals + per-month rows for Overall/Equity/Commodity/F&O, with CSV export) |
 | `/mf` | MFDashboard/MFDashboard | MF summary + CAS PDF upload + schemes/txns tables |
 | `/admin` | Admin/AdminPanel | Two tabs: Users (user list → portfolio picker → trade log) and Configuration (ETF master CRUD). ADMIN only. |
 | `/sip/trades` | SIPJournal/SIPTrades | Raw SIP trade table + CSV import + add trade |
@@ -559,3 +560,26 @@ Date, ETF, AssetClass, Ticker, Qty, Price[, TradePrice, CMP, Exit Date, Exit Pri
 - Duplicate rows (same user+date+ticker+qty+price) are silently skipped.
 
 --- END SIP JOURNAL FEATURE ---
+
+---
+
+## SEGMENTS MONTHLY BREAKDOWN (Issue #11)
+
+**Status:** Implemented
+
+**Overview:** Adds a month-by-month, cross-segment stats table to the Segments page (`/segments`), below the existing per-segment stat cards. Shows Overall + EQUITY + COMMODITY + F_AND_O rows for every month that has closed trades, plus an "All Time" totals block, and supports CSV export.
+
+### Backend
+- `backend/trades/views.py` — `monthly_segment_breakdown(request, portfolio_id)` groups closed trades (`close_date` not null, `net_income` not null) by `YYYY-MM`, computing per month and per segment: `net_income`, `trades`, `trade_in_profit`, `trade_in_loss`, `win_rate`, `avg_per_trade`, `avg_profit`, `avg_loss`, `actual_rr` (= |avg_profit / avg_loss|). Months sorted newest first.
+- `backend/trades/urls.py` — `GET /api/portfolios/<portfolio_id>/stats/monthly-segment-breakdown/`
+
+### Frontend
+- `frontend/src/types/index.ts` — `MonthlySegmentStats`, `MonthlySegmentBreakdown` interfaces.
+- `frontend/src/api/trades.ts` — `tradesApi.getMonthlySegmentBreakdown(portfolioId)`.
+- `frontend/src/pages/Segments/Segments.tsx`:
+  - `computeAllTime(rows, key)` — client-side rollup across all months for the "All Time" block. Averages are **weighted** (Σ(avg × count) / Σcount), not a naive mean of monthly averages, so the all-time avg profit/loss/R:R stays mathematically exact.
+  - Table renders an "All Time" section (Overall/Equity/Commodity/F&O) followed by one section per month (newest first), each with the same 4 segment rows.
+  - "CSV" button (`downloadBreakdownCsv`) exports the same all-time + per-month rows client-side (no backend endpoint) as `segment_monthly_breakdown.csv`.
+  - Table only renders when `breakdown.length > 0`.
+
+--- END SEGMENTS MONTHLY BREAKDOWN ---

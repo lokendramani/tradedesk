@@ -73,6 +73,26 @@ export interface MonthlyPnl {
   net_income: string
 }
 
+export interface MonthlySegmentStats {
+  net_income: number
+  trades: number
+  trade_in_profit: number
+  trade_in_loss: number
+  win_rate: number
+  avg_per_trade: number
+  avg_profit: number | null
+  avg_loss: number | null
+  actual_rr: number | null
+}
+
+export interface MonthlySegmentBreakdown {
+  month: string
+  overall: MonthlySegmentStats | null
+  EQUITY: MonthlySegmentStats | null
+  COMMODITY: MonthlySegmentStats | null
+  F_AND_O: MonthlySegmentStats | null
+}
+
 export interface TradeFilter {
   segment?: string
   direction?: string

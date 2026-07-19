@@ -486,6 +486,56 @@ def closed_months(request, portfolio_id):
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
+def monthly_segment_breakdown(request, portfolio_id):
+    from collections import defaultdict
+    portfolio = get_portfolio(portfolio_id, request.user)
+    qs = Trade.objects.filter(portfolio=portfolio).exclude(
+        close_date__isnull=True
+    ).filter(net_income__isnull=False).only('close_date', 'segment', 'net_income')
+
+    monthly = defaultdict(lambda: {'overall': [], 'EQUITY': [], 'COMMODITY': [], 'F_AND_O': []})
+    for t in qs:
+        key = f"{t.close_date.year}-{t.close_date.month:02d}"
+        monthly[key]['overall'].append(t.net_income)
+        if t.segment in ('EQUITY', 'COMMODITY', 'F_AND_O'):
+            monthly[key][t.segment].append(t.net_income)
+
+    def calc(incomes):
+        if not incomes:
+            return None
+        profits = [v for v in incomes if v > 0]
+        losses  = [v for v in incomes if v < 0]
+        total   = sum(incomes)
+        count   = len(incomes)
+        avg_p   = sum(profits) / len(profits) if profits else Decimal('0')
+        avg_l   = sum(losses)  / len(losses)  if losses  else Decimal('0')
+        return {
+            'net_income':      float(round(total, 2)),
+            'trades':          count,
+            'trade_in_profit': len(profits),
+            'trade_in_loss':   len(losses),
+            'win_rate':        round(len(profits) / count * 100, 2),
+            'avg_per_trade':   float(round(total / count, 2)),
+            'avg_profit':      float(round(avg_p, 2)) if profits else None,
+            'avg_loss':        float(round(avg_l, 2)) if losses  else None,
+            'actual_rr':       round(abs(avg_p / avg_l), 2) if losses else None,
+        }
+
+    result = [
+        {
+            'month':     key,
+            'overall':   calc(monthly[key]['overall']),
+            'EQUITY':    calc(monthly[key]['EQUITY']),
+            'COMMODITY': calc(monthly[key]['COMMODITY']),
+            'F_AND_O':   calc(monthly[key]['F_AND_O']),
+        }
+        for key in sorted(monthly.keys(), reverse=True)
+    ]
+    return Response({'success': True, 'data': result})
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
 def sample_csv(request, portfolio_id):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="tradedesk_sample.csv"'

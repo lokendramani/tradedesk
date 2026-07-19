@@ -27,6 +27,8 @@ urlpatterns = [
          views.monthly_pnl, name='monthly-pnl'),
     path('<uuid:portfolio_id>/stats/closed-months/',
          views.closed_months, name='closed-months'),
+    path('<uuid:portfolio_id>/stats/monthly-segment-breakdown/',
+         views.monthly_segment_breakdown, name='monthly-segment-breakdown'),
     path('<uuid:portfolio_id>/trades/chat/',
          trade_chat, name='trade-chat'),
 ]
