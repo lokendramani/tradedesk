@@ -12,12 +12,28 @@ function triggerDownload(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
+export interface PaginatedTrades {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Trade[]
+}
+
 export const tradesApi = {
-  getAll: async (portfolioId: string, filters?: TradeFilter): Promise<Trade[]> => {
+  getAll: async (portfolioId: string, filters?: TradeFilter): Promise<PaginatedTrades> => {
     const res = await client.get(`/portfolios/${portfolioId}/trades/`, {
       params: filters,
     })
-    return res.data.data || res.data.results || res.data
+    const body = res.data
+    if (Array.isArray(body)) {
+      return { count: body.length, next: null, previous: null, results: body }
+    }
+    return {
+      count: body.count ?? 0,
+      next: body.next ?? null,
+      previous: body.previous ?? null,
+      results: body.data || body.results || [],
+    }
   },
 
   create: async (portfolioId: string, data: Partial<Trade>): Promise<Trade> => {

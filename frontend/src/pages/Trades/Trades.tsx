@@ -786,6 +786,9 @@ type ModalType = 'add' | 'edit' | 'close' | 'import' | 'delete' | null
 
 const filterCls = "bg-white border border-surface-border text-neutral-primary text-xs rounded px-3 py-2 focus:outline-none focus:border-brand"
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
+const ALL_PAGE_SIZE = 5000 // matches backend TradePagination.max_page_size
+
 export default function Trades() {
   const { portfolioId } = useAuthStore()
   const [trades,        setTrades]        = useState<Trade[]>([])
@@ -799,6 +802,10 @@ export default function Trades() {
   const [status,    setStatus]    = useState('')
   const [result,    setResult]    = useState('')
 
+  const [page,       setPage]       = useState(1)
+  const [pageSize,   setPageSize]   = useState<number | 'all'>(50)
+  const [totalCount, setTotalCount] = useState(0)
+
   const load = useCallback(async () => {
     if (!portfolioId) return
     setLoading(true)
@@ -811,14 +818,21 @@ export default function Trades() {
         only_profit: result === 'profit' || undefined,
         only_loss:   result === 'loss'   || undefined,
         search:      search || undefined,
+        page,
+        page_size: pageSize === 'all' ? ALL_PAGE_SIZE : pageSize,
       })
-      setTrades(Array.isArray(data) ? data : [])
+      setTrades(data.results)
+      setTotalCount(data.count)
     } finally {
       setLoading(false)
     }
-  }, [portfolioId, segment, direction, status, result, search])
+  }, [portfolioId, segment, direction, status, result, search, page, pageSize])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => { setPage(1) }, [segment, direction, status, result, search, pageSize])
+
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalCount / pageSize))
 
   const openAdd    = () => { setSelectedTrade(null); setModal('add') }
   const openEdit   = (t: Trade) => { setSelectedTrade(t); setModal('edit') }
@@ -841,7 +855,7 @@ export default function Trades() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-display font-bold text-neutral-primary">Trade Log</h1>
         <div className="flex items-center gap-2">
-          {trades.length > 0 && portfolioId && (
+          {totalCount > 0 && portfolioId && (
             <button
               onClick={() => tradesApi.exportCsv(portfolioId)}
               className="px-3 py-2 text-xs text-neutral-muted hover:text-neutral-primary border border-surface-border hover:border-neutral-muted rounded transition-colors"
@@ -890,7 +904,17 @@ export default function Trades() {
           <button onClick={clearFilters} className="text-xs text-neutral-muted hover:text-neutral-primary underline">Clear</button>
         )}
         {loading && <span className="text-xs text-neutral-muted animate-pulse">Loading...</span>}
-        <span className="text-xs text-neutral-muted ml-auto">{trades.length} trade{trades.length !== 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-neutral-muted">{totalCount} trade{totalCount !== 1 ? 's' : ''}</span>
+          <select
+            value={String(pageSize)}
+            onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            className={filterCls}
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
+            <option value="all">All</option>
+          </select>
+        </div>
       </div>
 
       {/* Table */}
@@ -972,6 +996,27 @@ export default function Trades() {
           </table>
         </div>
       </div>
+
+      {/* Pager */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-3 pr-16">
+          <span className="text-xs text-neutral-muted">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="px-3 py-1.5 text-xs text-neutral-muted hover:text-neutral-primary border border-surface-border hover:border-neutral-muted rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          >
+            ← Prev
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="px-3 py-1.5 text-xs text-neutral-muted hover:text-neutral-primary border border-surface-border hover:border-neutral-muted rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          >
+            Next →
+          </button>
+        </div>
+      )}
 
       {/* Modals */}
       {modal === 'add'    && <AddEditModal    trade={null}          onClose={closeModal} onSave={handleAdd}    />}

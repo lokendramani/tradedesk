@@ -101,6 +101,8 @@ export interface TradeFilter {
   only_profit?: boolean
   only_loss?: boolean
   search?: string
+  page?: number
+  page_size?: number
 }
 
 // ── SIP Journal types ────────────────────────────────────────────────────────

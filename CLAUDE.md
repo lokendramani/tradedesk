@@ -132,7 +132,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
   `net_income`, `risk_reward`) are computed automatically on `save()` via
   `recalculate()`. Charge rates: Equity 0.11%, Commodity 0.02%, F&O ₹130/leg.
 - Endpoints under `/api/portfolios/<portfolio_id>/`:
-  - `GET/POST  /trades/` — list (filterable) / create
+  - `GET/POST  /trades/` — list (filterable, paginated via `TradePagination`: `?page=`, `?page_size=` up to `max_page_size=5000`) / create
   - `GET/PUT/DELETE /trades/<id>/` — detail
   - `PATCH /trades/<id>/close/` — close a trade (supply `close_date`, `close_price`)
   - `POST  /trades/import/` — CSV import with column mapping
@@ -170,7 +170,7 @@ The database is **Supabase PostgreSQL** (remote). `DATABASE_URL` uses
 | `/login` | Auth/Login | JWT login, stores tokens in localStorage |
 | `/register` | Auth/Register | New user registration |
 | `/dashboard` | Dashboard/Dashboard | Stats grid + equity curve + charts |
-| `/trades` | Trades/Trades | Trade log table, add/edit/close modals, CSV import wizard |
+| `/trades` | Trades/Trades | Trade log table (server-side paginated, page-size selector 25/50/100/200/All), add/edit/close modals, CSV import wizard |
 | `/equity` | Equity/Equity | Full-screen equity curve with segment/period filters |
 | `/segments` | Segments/Segments | Per-segment stats cards + Monthly Breakdown table (all-time totals + per-month rows for Overall/Equity/Commodity/F&O, with CSV export) |
 | `/mf` | MFDashboard/MFDashboard | MF summary + CAS PDF upload + schemes/txns tables |
@@ -305,8 +305,6 @@ pdfplumber==0.11.4        # CAS PDF parsing
 - `TWELVE_DATA_API_KEY` is in `.env` but no live price feed is wired up for the Trade Journal.
 - `/settings` route is in the sidebar but has no page component yet.
 - No automated tests exist (placeholder `tests.py` files only).
-- Pagination is set to 50 items per page but the frontend does not render
-  paginator controls — it reads `res.data.data || res.data.results || res.data`.
 - `Pillow` is installed but not used anywhere visible.
 - SIP yfinance price refresh can be slow on first run (bulk-fetching NSE history). Subsequent calls use DB cache.
 - SIP Summary (`/sip/summary`) XIRR and benchmark comparison require at least one price refresh to show meaningful values.

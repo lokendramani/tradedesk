@@ -1,6 +1,7 @@
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, Avg
 from portfolio.models import Portfolio
@@ -17,9 +18,15 @@ def get_portfolio(portfolio_id, user):
         return get_object_or_404(Portfolio, id=portfolio_id)
     return get_object_or_404(Portfolio, id=portfolio_id, user=user)
 
+class TradePagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 5000
+
 class TradeListCreateView(generics.ListCreateAPIView):
     serializer_class   = TradeSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class    = TradePagination
     filterset_class    = TradeFilter
     search_fields      = ['scrip_name']
     ordering_fields    = ['entry_date', 'net_income', 'scrip_name']
