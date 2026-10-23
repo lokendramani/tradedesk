@@ -1,5 +1,5 @@
 import client from './client'
-import type { AuthResponse } from '../types'
+import type { AuthResponse, User } from '../types'
 
 export const authApi = {
   register: async (email: string, password: string, full_name: string) => {
@@ -14,6 +14,13 @@ export const authApi = {
     localStorage.setItem('refresh_token', refresh)
     localStorage.setItem('user', JSON.stringify(user))
     return res.data.data
+  },
+
+  getMe: async (): Promise<User> => {
+    const res = await client.get('/auth/me/')
+    const user = res.data.data as User
+    localStorage.setItem('user', JSON.stringify(user))
+    return user
   },
 
   logout: () => {

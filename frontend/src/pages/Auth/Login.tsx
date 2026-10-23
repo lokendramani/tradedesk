@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/auth'
 import { useAuthStore } from '../../store/authStore'
-import { portfolioApi } from '../../api/portfolio'
 import { extractErrorMessage } from '../../utils/format'
+import { getDefaultModuleRoute } from '../../utils/moduleRouting'
 
 export default function Login() {
   const navigate  = useNavigate()
-  const { setUser, setPortfolioId } = useAuthStore()
+  const initializeUser = useAuthStore((state) => state.initializeUser)
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -19,22 +19,10 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const data = await authApi.login(email, password)
-      setUser(data.user)
-
-      const portfolios = await portfolioApi.getAll()
-      if (portfolios.length > 0) {
-        setPortfolioId(portfolios[0].id)
-      } else {
-        const p = await portfolioApi.create({
-          name: 'My Trading Journal',
-          type: 'TRADING',
-          starting_capital: 0,
-          worst_case_capital: 0,
-        })
-        setPortfolioId(p.id)
-      }
-      navigate('/dashboard')
+      await authApi.login(email, password)
+      const user = await authApi.getMe()
+      await initializeUser(user)
+      navigate(getDefaultModuleRoute(user))
     } catch (err: unknown) {
       const ax = err as { response?: { data?: unknown }; message?: string }
       const msg = extractErrorMessage(ax.response?.data)

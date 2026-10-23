@@ -5,6 +5,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, Avg
 from portfolio.models import Portfolio
+from users.permissions import HasTradeDeskAccess
 from .models import Trade
 from .serializers import TradeSerializer, CloseTradeSerializer
 from .filters import TradeFilter
@@ -25,7 +26,7 @@ class TradePagination(PageNumberPagination):
 
 class TradeListCreateView(generics.ListCreateAPIView):
     serializer_class   = TradeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasTradeDeskAccess]
     pagination_class    = TradePagination
     filterset_class    = TradeFilter
     search_fields      = ['scrip_name']
@@ -41,14 +42,14 @@ class TradeListCreateView(generics.ListCreateAPIView):
 
 class TradeDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = TradeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasTradeDeskAccess]
 
     def get_queryset(self):
         portfolio = get_portfolio(self.kwargs['portfolio_id'], self.request.user)
         return Trade.objects.filter(portfolio=portfolio)
 
 @api_view(['PATCH'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def close_trade(request, portfolio_id, pk):
     portfolio = get_portfolio(portfolio_id, request.user)
     trade = get_object_or_404(Trade, id=pk, portfolio=portfolio)
@@ -64,7 +65,7 @@ def close_trade(request, portfolio_id, pk):
                      'data': TradeSerializer(trade).data})
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def import_csv(request, portfolio_id):
     portfolio     = get_portfolio(portfolio_id, request.user)
     file          = request.FILES.get('file')
@@ -208,7 +209,7 @@ def import_csv(request, portfolio_id):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def bulk_import_trades(request, portfolio_id):
     """
     Accepts pre-parsed trades as JSON, handles dedup/replace in bulk.
@@ -343,7 +344,7 @@ def bulk_import_trades(request, portfolio_id):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def clear_trades(request, portfolio_id):
     """Delete all trades for a portfolio (used by replace-mode import)."""
     portfolio = get_portfolio(portfolio_id, request.user)
@@ -351,7 +352,7 @@ def clear_trades(request, portfolio_id):
     return Response({'success': True, 'data': {'deleted': deleted}})
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def stats(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     segment   = request.query_params.get('segment')
@@ -406,7 +407,7 @@ def stats(request, portfolio_id):
     }})
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def equity_curve(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     segment   = request.query_params.get('segment')
@@ -458,7 +459,7 @@ def equity_curve(request, portfolio_id):
     return Response({'success': True, 'data': points})
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def monthly_pnl(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     segment   = request.query_params.get('segment')
@@ -479,7 +480,7 @@ def monthly_pnl(request, portfolio_id):
     return Response({'success': True, 'data': result})
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def closed_months(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     qs = Trade.objects.filter(portfolio=portfolio).exclude(
@@ -492,7 +493,7 @@ def closed_months(request, portfolio_id):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def monthly_segment_breakdown(request, portfolio_id):
     from collections import defaultdict
     portfolio = get_portfolio(portfolio_id, request.user)
@@ -542,7 +543,7 @@ def monthly_segment_breakdown(request, portfolio_id):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def sample_csv(request, portfolio_id):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="tradedesk_sample.csv"'
@@ -557,7 +558,7 @@ def sample_csv(request, portfolio_id):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def export_csv(request, portfolio_id):
     portfolio = get_portfolio(portfolio_id, request.user)
     trades    = Trade.objects.filter(portfolio=portfolio).order_by('entry_date', 'created_at')
@@ -722,7 +723,7 @@ def build_trade_context(portfolio_id, user):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, HasTradeDeskAccess])
 def trade_chat(request, portfolio_id):
     user_message = (request.data.get('message') or '').strip()
     if not user_message:

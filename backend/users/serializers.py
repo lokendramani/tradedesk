@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from .access import get_active_module_codes
 from .models import User
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -32,13 +33,20 @@ class LoginSerializer(serializers.Serializer):
         return data
 
 class UserSerializer(serializers.ModelSerializer):
+    modules = serializers.SerializerMethodField()
+
     class Meta:
         model  = User
-        fields = ['id', 'email', 'full_name', 'role', 'created_at']
+        fields = ['id', 'email', 'full_name', 'role', 'created_at', 'modules']
         read_only_fields = fields
+
+    def get_modules(self, user):
+        return get_active_module_codes(user)
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
+    modules = get_active_module_codes(user)
+    refresh['modules'] = modules
     return {
         'refresh': str(refresh),
         'access':  str(refresh.access_token),
@@ -47,5 +55,6 @@ def get_tokens_for_user(user):
             'email':     user.email,
             'full_name': user.full_name,
             'role':      user.role,
+            'modules':   modules,
         }
     }

@@ -1,6 +1,7 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated
+from users.permissions import HasTradeDeskAccess
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from django.db import transaction as db_transaction
@@ -13,7 +14,7 @@ from .parser import parse_cas_pdf
 # ── CAS Import ────────────────────────────────────────────────────────────────
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 @parser_classes([MultiPartParser])
 def import_cas(request):
     pdf_file = request.FILES.get('file')
@@ -111,7 +112,7 @@ def import_cas(request):
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def dashboard(request):
     folios   = MFFolio.objects.filter(user=request.user).prefetch_related('schemes')
     schemes  = MFScheme.objects.filter(folio__user=request.user)
@@ -156,7 +157,7 @@ def dashboard(request):
 # ── Schemes list ──────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def schemes_list(request):
     fund_house = request.query_params.get('fund_house')
     qs = MFScheme.objects.filter(folio__user=request.user).select_related('folio')
@@ -192,7 +193,7 @@ def schemes_list(request):
 # ── Transactions list ─────────────────────────────────────────────────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def transactions_list(request):
     scheme_id  = request.query_params.get('scheme_id')
     fund_house = request.query_params.get('fund_house')
@@ -230,7 +231,7 @@ def transactions_list(request):
 # ── Delete all MF data ────────────────────────────────────────────────────────
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def delete_all(request):
     deleted, _ = MFFolio.objects.filter(user=request.user).delete()
     return Response({'success': True, 'data': {'deleted_folios': deleted}})

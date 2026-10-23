@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/auth'
 import { useAuthStore } from '../../store/authStore'
-import { portfolioApi } from '../../api/portfolio'
 import { extractErrorMessage } from '../../utils/format'
+import { getDefaultModuleRoute } from '../../utils/moduleRouting'
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? (
@@ -23,14 +23,12 @@ function EyeIcon({ open }: { open: boolean }) {
 
 export default function Register() {
   const navigate = useNavigate()
-  const { setUser, setPortfolioId } = useAuthStore()
+  const initializeUser = useAuthStore((state) => state.initializeUser)
 
   const [fullName,        setFullName]        = useState('')
   const [email,           setEmail]           = useState('')
   const [password,        setPassword]        = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [capital,         setCapital]         = useState('')
-  const [worstCase,       setWorstCase]       = useState('')
   const [error,           setError]           = useState('')
   const [loading,         setLoading]         = useState(false)
   const [showPassword,    setShowPassword]    = useState(false)
@@ -47,19 +45,11 @@ export default function Register() {
 
     setLoading(true)
     try {
-      const data = await authApi.register(email, password, fullName)
-      setUser(data.data.user)
-
+      await authApi.register(email, password, fullName)
       await authApi.login(email, password)
-
-      const p = await portfolioApi.create({
-        name: 'My Trading Journal',
-        type: 'TRADING',
-        starting_capital:   parseFloat(capital)   || 0,
-        worst_case_capital: parseFloat(worstCase) || 0,
-      })
-      setPortfolioId(p.id)
-      navigate('/dashboard')
+      const user = await authApi.getMe()
+      await initializeUser(user)
+      navigate(getDefaultModuleRoute(user))
     } catch (err: unknown) {
       const ax = err as { response?: { data?: unknown } }
       setError(extractErrorMessage(ax.response?.data) || 'Registration failed. Please try again.')
@@ -130,18 +120,6 @@ export default function Register() {
                   <EyeIcon open={showConfirm} />
                 </button>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Starting Capital ₹</label>
-              <input type="number" value={capital} onChange={(e) => setCapital(e.target.value)}
-                className={`${inputClass} font-mono`} placeholder="800000" />
-            </div>
-
-            <div>
-              <label className="block text-xs text-neutral-muted uppercase tracking-wider mb-1">Worst Case ₹</label>
-              <input type="number" value={worstCase} onChange={(e) => setWorstCase(e.target.value)}
-                className={`${inputClass} font-mono`} placeholder="560000" />
             </div>
 
             <button type="submit" disabled={loading}
