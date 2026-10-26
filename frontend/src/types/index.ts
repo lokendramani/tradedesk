@@ -1,8 +1,11 @@
+export type ModuleCode = 'tradedesk' | 'wealth'
+
 export interface User {
   id: string
   email: string
   full_name: string
   role: string
+  modules: ModuleCode[]
 }
 
 export interface AuthResponse {

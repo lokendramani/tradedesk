@@ -2,6 +2,7 @@ from pathlib import Path
 from decouple import config
 from datetime import timedelta
 import urllib.parse as urlparse
+from users.throttling import load_auth_throttle_rates
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -120,6 +121,9 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+    # Scoped throttles are attached only to public auth endpoints; regular API
+    # traffic remains unthrottled by DRF's application-level rate limiter.
+    'DEFAULT_THROTTLE_RATES': load_auth_throttle_rates(config),
 }
 
 # ── JWT Settings ──────────────────────────────────────

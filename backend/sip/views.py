@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from users.permissions import HasTradeDeskAccess
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def upload_csv(request):
     f = request.FILES.get('file')
     if not f:
@@ -66,7 +67,7 @@ def upload_csv(request):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def trades_list_or_add(request):
     if request.method == 'GET':
         qs = SIPTrade.objects.filter(user=request.user).order_by('-trade_date', '-created_at')
@@ -108,7 +109,7 @@ def _add_trade(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def close_trade(request, pk):
     try:
         trade = SIPTrade.objects.get(pk=pk, user=request.user)
@@ -128,14 +129,14 @@ def close_trade(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def dashboard(request):
     data = recalculate_for_user(request.user)
     return Response(data)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def refresh_prices(request):
     tickers = list(
         SIPTrade.objects.filter(user=request.user, exit_date__isnull=True)
@@ -155,7 +156,7 @@ def refresh_prices(request):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def clear_data(request):
     """Wipe all SIP data for the current user."""
     user = request.user
@@ -166,7 +167,7 @@ def clear_data(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def holdings(request):
     """Aggregated active (open) holdings with latest CMP from price cache."""
     from collections import defaultdict
@@ -250,7 +251,7 @@ def holdings(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def booked_pl(request):
     """Closed trades: ticker-level summary + individual trade detail."""
     from collections import defaultdict
@@ -352,7 +353,7 @@ def booked_pl(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def sell(request):
     """
     FIFO sell across open positions for a ticker.
@@ -453,7 +454,7 @@ def _is_admin(user) -> bool:
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def etf_master_list(request):
     if request.method == 'GET':
         qs = SIPETFMaster.objects.filter(is_active=True)
@@ -479,7 +480,7 @@ def etf_master_list(request):
 
 
 @api_view(['PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def etf_master_detail(request, ticker):
     if not _is_admin(request.user):
         return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)

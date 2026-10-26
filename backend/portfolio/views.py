@@ -1,10 +1,11 @@
 from rest_framework import generics, permissions
 from .models import Portfolio
 from .serializers import PortfolioSerializer
+from users.permissions import HasTradeDeskAccess
 
 class PortfolioListCreateView(generics.ListCreateAPIView):
     serializer_class   = PortfolioSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasTradeDeskAccess]
 
     def get_queryset(self):
         user = self.request.user
@@ -20,7 +21,7 @@ class PortfolioListCreateView(generics.ListCreateAPIView):
 
 class PortfolioDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class   = PortfolioSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasTradeDeskAccess]
 
     def get_queryset(self):
         return Portfolio.objects.filter(user=self.request.user)

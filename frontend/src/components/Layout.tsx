@@ -169,6 +169,12 @@ export default function Layout() {
 
             {/* Standalone items */}
             <div className="border-t border-surface-border my-3 mx-4" />
+            {user?.modules?.includes('wealth') && (
+              <NavLink to="/modules" className={navLinkClass} title={collapsed ? 'Switch applications' : undefined}>
+                <LayoutGrid size={18} className="flex-shrink-0" />
+                {!collapsed && <span className="truncate">Switch applications</span>}
+              </NavLink>
+            )}
             <div className="space-y-0.5">
               {STANDALONE_ITEMS.map(({ path, label, icon: Icon }) => (
                 <NavLink key={path} to={path} className={navLinkClass} title={collapsed ? label : undefined}>
