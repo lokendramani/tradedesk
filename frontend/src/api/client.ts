@@ -1,4 +1,6 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
+import { getAuthSessionSnapshot } from '../utils/authSessionStorage'
+import { refreshSessionForGeneration } from '../utils/authSessionRefresh'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -9,12 +11,19 @@ const client = axios.create({
 
 const PUBLIC_PATHS = ['/auth/login/', '/auth/register/', '/auth/token/refresh/']
 
-client.interceptors.request.use((config) => {
+type SessionAwareConfig = InternalAxiosRequestConfig & {
+  authSessionGeneration?: string
+  _retry?: boolean
+}
+
+client.interceptors.request.use(async (config) => {
   const isPublicEndpoint = PUBLIC_PATHS.some(p => config.url?.startsWith(p))
   if (!isPublicEndpoint) {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    const session = await getAuthSessionSnapshot()
+    if (session.accessToken) {
+      config.headers.Authorization = `Bearer ${session.accessToken}`
+      const sessionConfig = config as SessionAwareConfig
+      sessionConfig.authSessionGeneration = session.generation ?? undefined
     }
   }
   return config
@@ -23,23 +32,26 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const original = error.config
+    const original = error.config as SessionAwareConfig | undefined
     const isPublicEndpoint = PUBLIC_PATHS.some(p => original?.url?.startsWith(p))
-    if (error.response?.status === 401 && !original._retry && !isPublicEndpoint) {
+    if (error.response?.status === 401 && original && !original._retry && !isPublicEndpoint) {
       original._retry = true
+      const generation = original.authSessionGeneration
+      if (!generation) return Promise.reject(error)
       try {
-        const refresh = localStorage.getItem('refresh_token')
-        const res = await axios.post(
-          `${API_BASE}/auth/token/refresh/`,
-          { refresh }
-        )
-        const newToken = res.data.data?.access ?? res.data.access
-        localStorage.setItem('access_token', newToken)
-        original.headers.Authorization = `Bearer ${newToken}`
-        return client(original)
+        const result = await refreshSessionForGeneration(generation, async (refreshToken) => {
+          const res = await axios.post(`${API_BASE}/auth/token/refresh/`, { refresh: refreshToken })
+          return res.data.data?.access ?? res.data.access
+        })
+        if (result.status === 'refreshed') {
+          original.headers.Authorization = `Bearer ${result.accessToken}`
+          return client(original)
+        }
+        if (result.status === 'failed' && result.sessionCleared) {
+          window.location.href = '/login'
+        }
       } catch {
-        localStorage.clear()
-        window.location.href = '/login'
+        // A lock/storage failure must not fall back to an unguarded session clear.
       }
     }
     return Promise.reject(error)

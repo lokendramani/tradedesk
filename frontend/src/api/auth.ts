@@ -1,5 +1,7 @@
 import client from './client'
 import type { AuthResponse, User } from '../types'
+import { clearAuthSessionIfGenerationMatches, clearAuthSessionStorage, saveAuthSession } from '../utils/authSessionStorage'
+import { fetchUserForActiveSession, type SessionBoundUser } from '../utils/sessionUserInitialization'
 
 export const authApi = {
   register: async (email: string, password: string, full_name: string) => {
@@ -7,29 +9,26 @@ export const authApi = {
     return res.data
   },
 
-  login: async (email: string, password: string): Promise<AuthResponse> => {
+  login: async (email: string, password: string): Promise<AuthResponse & { sessionGeneration: string }> => {
     const res = await client.post('/auth/login/', { email, password })
     const { access, refresh, user } = res.data.data
-    localStorage.setItem('access_token', access)
-    localStorage.setItem('refresh_token', refresh)
-    localStorage.setItem('user', JSON.stringify(user))
-    return res.data.data
+    const sessionGeneration = await saveAuthSession(access, refresh, user)
+    return { ...res.data.data, sessionGeneration }
   },
 
-  getMe: async (): Promise<User> => {
-    const res = await client.get('/auth/me/')
-    const user = res.data.data as User
-    localStorage.setItem('user', JSON.stringify(user))
-    return user
+  getMe: async (): Promise<SessionBoundUser> => {
+    return fetchUserForActiveSession(async () => {
+      const res = await client.get('/auth/me/')
+      return res.data.data as User
+    })
   },
 
-  logout: () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
-    localStorage.removeItem('portfolio_id')
-    localStorage.removeItem('admin_own_portfolio_id')
-    localStorage.removeItem('admin_view_as')
+  logout: async (): Promise<void> => {
+    await clearAuthSessionStorage()
+  },
+
+  logoutIfSessionMatches: (expectedGeneration: string): Promise<boolean> => {
+    return clearAuthSessionIfGenerationMatches(expectedGeneration)
   },
 
   getUser: () => {

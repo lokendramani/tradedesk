@@ -20,8 +20,9 @@ export default function Login() {
     setLoading(true)
     try {
       await authApi.login(email, password)
-      const user = await authApi.getMe()
-      await initializeUser(user)
+      const { user, sessionGeneration } = await authApi.getMe()
+      const initialized = await initializeUser(user, undefined, sessionGeneration)
+      if (!initialized) return
       navigate(getDefaultModuleRoute(user))
     } catch (err: unknown) {
       const ax = err as { response?: { data?: unknown }; message?: string }

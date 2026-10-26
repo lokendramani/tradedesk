@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore'
 
 import Login from './pages/Auth/Login'
 import Register from './pages/Auth/Register'
+import PortfolioSetup from './pages/Auth/PortfolioSetup'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard/Dashboard'
 import Trades from './pages/Trades/Trades'
@@ -24,6 +25,7 @@ import {
 } from './pages/ModuleAccess/ModuleAccess'
 import type { ModuleCode } from './types'
 import { getTradePathRedirect } from './utils/moduleRouting'
+import { getPortfolioRootState } from './utils/portfolioSetup'
 
 function ProtectedRoute() {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn)
@@ -35,6 +37,36 @@ function ModuleGuard({ module, children }: { module: ModuleCode; children?: Reac
   if (!user) return <Navigate to="/login" replace />
   if (!user.modules?.includes(module)) return <ModuleAccessDenied module={module} />
   return children ? <>{children}</> : <Outlet />
+}
+
+function TradeDeskRoot() {
+  const user = useAuthStore((state) => state.user)
+  const initializeUser = useAuthStore((state) => state.initializeUser)
+  const portfolioId = useAuthStore((state) => state.portfolioId)
+  const status = useAuthStore((state) => state.portfolioInitializationStatus)
+  const error = useAuthStore((state) => state.portfolioInitializationError)
+  const rootState = getPortfolioRootState(status, portfolioId)
+
+  if (rootState === 'ready') return <Layout />
+  if (rootState === 'needs-setup') return <PortfolioSetup />
+  if (rootState === 'lookup-error') {
+    return (
+      <main className="min-h-screen bg-surface-page px-6 py-16">
+        <section className="mx-auto max-w-xl rounded-xl border border-surface-border bg-white p-8 shadow-sm">
+          <h1 className="font-display text-2xl font-bold text-neutral-primary">Could not load your portfolio</h1>
+          <p role="alert" className="mt-3 text-sm leading-6 text-loss-text">
+            {error || 'Your portfolio could not be checked. No portfolio was created.'}
+          </p>
+          <button type="button" disabled={status === 'loading'}
+            onClick={() => { if (user) void initializeUser(user) }}
+            className="mt-6 rounded-lg bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand/90 disabled:opacity-50">
+            Retry portfolio check
+          </button>
+        </section>
+      </main>
+    )
+  }
+  return <AppLoader />
 }
 
 function AdminRoute() {
@@ -89,7 +121,7 @@ export default function App() {
 
           <Route element={<ModuleGuard module="tradedesk" />}>
             <Route path="trade/*" element={<TradePathRedirect />} />
-            <Route path="/" element={<Layout />}>
+            <Route path="/" element={<TradeDeskRoot />}>
               <Route index element={<HomeRedirect />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="trades" element={<Trades />} />
