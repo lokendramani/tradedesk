@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from .access import get_active_module_codes
+from .permissions import HasTradeDeskAccess
 from .serializers import RegisterSerializer, LoginSerializer, get_tokens_for_user, UserSerializer
 from .models import User
 from .throttling import set_auth_throttle_scope
@@ -60,7 +61,7 @@ def me(request):
     return Response({'success': True, 'data': UserSerializer(request.user).data})
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasTradeDeskAccess])
 def admin_users(request):
     if request.user.role != 'ADMIN' and not request.user.is_staff:
         return Response({'success': False, 'message': 'Forbidden'}, status=403)

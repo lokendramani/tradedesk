@@ -20,6 +20,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from portfolio.models import Portfolio
 from trades.models import Trade
 from .models import AppModule, UserModuleAccess
+from .serializers import get_tokens_for_user
 from .throttling import load_auth_throttle_rates, validate_auth_throttle_rate
 from .views import login, refresh_token, register
 
@@ -45,6 +46,55 @@ class ModuleAccessApiTests(TestCase):
 
     def grant(self, module, user=None):
         return UserModuleAccess.objects.create(user=user or self.user, module=module)
+
+    def jwt_client_for(self, user):
+        client = APIClient()
+        tokens = get_tokens_for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+        return client
+
+    def test_admin_with_active_tradedesk_grant_can_list_users(self):
+        self.user.role = User.Role.ADMIN
+        self.user.save(update_fields=['role'])
+        self.grant(self.tradedesk)
+        client = self.jwt_client_for(self.user)
+
+        response = client.get(reverse('admin-users'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data'][0]['id'], str(self.user.id))
+
+    def test_admin_without_tradedesk_grant_is_denied_user_list(self):
+        self.user.role = User.Role.ADMIN
+        self.user.save(update_fields=['role'])
+        client = self.jwt_client_for(self.user)
+
+        response = client.get(reverse('admin-users'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_revoked_tradedesk_grant_denies_admin_with_existing_jwt(self):
+        self.user.role = User.Role.ADMIN
+        self.user.save(update_fields=['role'])
+        grant = self.grant(self.tradedesk)
+        client = self.jwt_client_for(self.user)
+
+        self.assertEqual(client.get(reverse('admin-users')).status_code, 200)
+        grant.revoked_at = timezone.now()
+        grant.save(update_fields=['revoked_at'])
+
+        self.assertEqual(client.get(reverse('auth-me')).status_code, 200)
+        response = client.get(reverse('admin-users'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_admin_with_tradedesk_grant_is_denied_user_list(self):
+        self.grant(self.tradedesk)
+        client = self.jwt_client_for(self.user)
+
+        response = client.get(reverse('admin-users'))
+
+        self.assertEqual(response.status_code, 403)
 
     def protected_paths(self):
         portfolio_id = uuid4()
