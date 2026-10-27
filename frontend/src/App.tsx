@@ -21,8 +21,10 @@ import {
   HomeRedirect,
   ModuleAccessDenied,
   ModuleSwitcher,
-  WealthModulePlaceholder,
 } from './pages/ModuleAccess/ModuleAccess'
+import WealthLayout from './pages/Wealth/WealthLayout'
+import WealthDashboard from './pages/Wealth/WealthDashboard'
+import WealthSection from './pages/Wealth/WealthSection'
 import type { ModuleCode } from './types'
 import { getTradePathRedirect } from './utils/moduleRouting'
 import { getPortfolioRootState } from './utils/portfolioSetup'
@@ -113,11 +115,20 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="access" element={<AccessRequired />} />
           <Route path="modules" element={<ModuleSwitcher />} />
-          <Route path="wealth/*" element={
+          <Route path="wealth" element={
             <ModuleGuard module="wealth">
-              <WealthModulePlaceholder />
+              <WealthLayout />
             </ModuleGuard>
-          } />
+          }>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<WealthDashboard />} />
+            <Route path="funds" element={<WealthSection />} />
+            <Route path="portfolio" element={<WealthSection />} />
+            <Route path="monthly-expense" element={<WealthSection />} />
+            <Route path="milestones" element={<WealthSection />} />
+            <Route path="transactions" element={<WealthSection />} />
+            <Route path="*" element={<Navigate to="/wealth/dashboard" replace />} />
+          </Route>
 
           <Route element={<ModuleGuard module="tradedesk" />}>
             <Route path="trade/*" element={<TradePathRedirect />} />

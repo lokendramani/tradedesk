@@ -74,24 +74,3 @@ export function ModuleAccessDenied({ module }: { module: ModuleCode }) {
     </main>
   )
 }
-
-export function WealthModulePlaceholder() {
-  const user = useAuthStore((state) => state.user)
-  const navigate = useNavigate()
-  return (
-    <main className="min-h-screen bg-surface-page px-6 py-16">
-      <section className="mx-auto max-w-xl rounded-xl border border-surface-border bg-white p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-widest text-neutral-muted">WealthOnCruise</p>
-        <h1 className="mt-2 font-display text-2xl font-bold text-neutral-primary">Your access is ready</h1>
-        <p className="mt-3 text-sm leading-6 text-neutral-muted">
-          The WealthOnCruise workspace will appear here as its features are added.
-        </p>
-        {user && getAvailableModuleChoices(user.modules ?? []).length > 1 && (
-          <button className="mt-6 text-sm font-semibold text-brand hover:underline" onClick={() => navigate('/modules')}>
-            Switch application
-          </button>
-        )}
-      </section>
-    </main>
-  )
-}
