@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'trades',
     'mf',
     'sip',
+    'wealth',
 ]
 
 # ── Middleware ────────────────────────────────────────

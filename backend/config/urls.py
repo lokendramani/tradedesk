@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/portfolios/', include('trades.urls')),
     path('api/mf/',         include('mf.urls')),
     path('api/sip/',        include('sip.urls')),
+    path('api/wealth/',     include('wealth.urls')),
 ]
