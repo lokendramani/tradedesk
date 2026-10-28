@@ -1,13 +1,16 @@
 from decimal import Decimal
+from datetime import date
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from users.models import AppModule, UserModuleAccess
-from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile
+from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile, WealthMilestone
 
 
 User = get_user_model()
@@ -355,3 +358,152 @@ class CashFlowApiTests(TestCase):
         self.assertEqual(self.client.patch(detail_url, {'name': 'Changed'}, format='json').status_code, 404)
         self.assertEqual(self.client.delete(detail_url).status_code, 404)
         self.assertEqual(category.name, CashFlowCategory.objects.get(pk=category.pk).name)
+
+
+class WealthMilestoneCalculationTests(TestCase):
+    def make_milestone(self, **overrides):
+        values = {
+            'user_id': 1,
+            'name': 'Home purchase',
+            'present_amount': Decimal('100000.00'),
+            'target_year': 2031,
+            'inflation_rate': Decimal('7.00'),
+            'expected_return_rate': Decimal('12.00'),
+        }
+        values.update(overrides)
+        return WealthMilestone(**values)
+
+    def test_inflation_calculation_rounds_to_two_rupees_decimals(self):
+        projection = self.make_milestone().calculate_projection(current_year=2026)
+
+        self.assertEqual(projection['future_amount'], Decimal('140255.17'))
+        self.assertEqual(projection['years_remaining'], 5)
+
+    def test_years_remaining_uses_configured_local_date_automatically(self):
+        milestone = self.make_milestone()
+        with patch('wealth.models.timezone.localdate', return_value=date(2028, 1, 1)):
+            projection = milestone.calculate_projection()
+
+        self.assertEqual(projection['years_remaining'], 3)
+        self.assertEqual(projection['future_amount'], Decimal('122504.30'))
+
+    def test_sip_uses_beginning_of_month_formula_at_default_and_changed_return_rates(self):
+        default_projection = self.make_milestone().calculate_projection(current_year=2026)
+        changed_projection = self.make_milestone(
+            expected_return_rate=Decimal('8.00'),
+        ).calculate_projection(current_year=2026)
+
+        self.assertEqual(default_projection['required_monthly_sip'], Decimal('1700.34'))
+        self.assertEqual(changed_projection['required_monthly_sip'], Decimal('1896.19'))
+
+    def test_zero_return_divides_future_amount_by_month_count(self):
+        projection = self.make_milestone(
+            expected_return_rate=Decimal('0.00'),
+        ).calculate_projection(current_year=2026)
+
+        self.assertEqual(projection['required_monthly_sip'], Decimal('2337.59'))
+
+    def test_non_future_target_has_no_required_sip_projection(self):
+        projection = self.make_milestone(target_year=2026).calculate_projection(current_year=2026)
+
+        self.assertEqual(projection['years_remaining'], 0)
+        self.assertIsNone(projection['required_monthly_sip'])
+
+
+class WealthMilestoneApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.wealth, _ = AppModule.objects.get_or_create(
+            code='wealth', defaults={'name': 'WealthOnCruise'}
+        )
+        cls.tradedesk, _ = AppModule.objects.get_or_create(
+            code='tradedesk', defaults={'name': 'TradeDesk'}
+        )
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='milestones@example.com', password='Milestone-123', full_name='Milestone User'
+        )
+        self.other_user = User.objects.create_user(
+            email='other-milestones@example.com', password='Milestone-123', full_name='Other Milestone User'
+        )
+        UserModuleAccess.objects.create(user=self.user, module=self.wealth)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.collection_url = reverse('wealth-milestones')
+
+    def payload(self, **overrides):
+        values = {
+            'name': 'Home purchase',
+            'present_amount': '100000.00',
+            'target_year': timezone.localdate().year + 5,
+            'inflation_rate': '7.00',
+            'expected_return_rate': '12.00',
+        }
+        values.update(overrides)
+        return values
+
+    def test_milestone_create_list_update_and_delete(self):
+        created = self.client.post(self.collection_url, self.payload(), format='json')
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['name'], 'Home purchase')
+        self.assertEqual(created.data['inflation_rate'], '7.00')
+        self.assertEqual(created.data['expected_return_rate'], '12.00')
+
+        listed = self.client.get(self.collection_url)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data['current_year'], timezone.localdate().year)
+        self.assertEqual(len(listed.data['milestones']), 1)
+
+        detail_url = reverse('wealth-milestone-detail', args=[created.data['id']])
+        updated = self.client.patch(detail_url, {'name': 'Education fund'}, format='json')
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data['name'], 'Education fund')
+
+        deleted = self.client.delete(detail_url)
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(self.client.get(self.collection_url).data['milestones'], [])
+
+    def test_milestones_are_private_to_each_authenticated_user(self):
+        created = self.client.post(self.collection_url, self.payload(), format='json')
+        detail_url = reverse('wealth-milestone-detail', args=[created.data['id']])
+        other_client = APIClient()
+        other_client.force_authenticate(self.other_user)
+        UserModuleAccess.objects.create(user=self.other_user, module=self.wealth)
+
+        self.assertEqual(other_client.get(self.collection_url).data['milestones'], [])
+        self.assertEqual(other_client.patch(detail_url, {'name': 'Changed'}, format='json').status_code, 404)
+        self.assertEqual(other_client.delete(detail_url).status_code, 404)
+
+    def test_target_year_must_be_in_the_future(self):
+        current_date = date(2032, 5, 1)
+        with patch('wealth.serializers.timezone.localdate', return_value=current_date):
+            response = self.client.post(self.collection_url, self.payload(target_year=2032), format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Target year must be in the future.', str(response.data['target_year']))
+
+    def test_milestone_endpoints_require_authentication_and_wealth_access(self):
+        detail_url = reverse('wealth-milestone-detail', args=[999999])
+        requests = [
+            lambda client: client.get(self.collection_url),
+            lambda client: client.post(self.collection_url, self.payload(), format='json'),
+            lambda client: client.patch(detail_url, {'name': 'Updated'}, format='json'),
+            lambda client: client.delete(detail_url),
+        ]
+        self.assertTrue(all(request(APIClient()).status_code == 401 for request in requests))
+
+        no_access_user = User.objects.create_user(
+            email='milestone-no-access@example.com', password='Milestone-123', full_name='No Access'
+        )
+        no_access = APIClient()
+        no_access.force_authenticate(no_access_user)
+        self.assertTrue(all(request(no_access).status_code == 403 for request in requests))
+
+        trade_only_user = User.objects.create_user(
+            email='milestone-trade-only@example.com', password='Milestone-123', full_name='Trade Only'
+        )
+        UserModuleAccess.objects.create(user=trade_only_user, module=self.tradedesk)
+        trade_only = APIClient()
+        trade_only.force_authenticate(trade_only_user)
+        self.assertTrue(all(request(trade_only).status_code == 403 for request in requests))

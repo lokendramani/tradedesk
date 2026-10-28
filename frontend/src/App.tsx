@@ -26,6 +26,7 @@ import WealthLayout from './pages/Wealth/WealthLayout'
 import WealthDashboard from './pages/Wealth/WealthDashboard'
 import WealthSection from './pages/Wealth/WealthSection'
 import MonthlyCashFlow from './pages/Wealth/MonthlyCashFlow'
+import Milestones from './pages/Wealth/Milestones'
 import type { ModuleCode } from './types'
 import { getTradePathRedirect } from './utils/moduleRouting'
 import { getPortfolioRootState } from './utils/portfolioSetup'
@@ -126,7 +127,7 @@ export default function App() {
             <Route path="funds" element={<WealthSection />} />
             <Route path="portfolio" element={<WealthSection />} />
             <Route path="monthly-expense" element={<MonthlyCashFlow />} />
-            <Route path="milestones" element={<WealthSection />} />
+            <Route path="milestones" element={<Milestones />} />
             <Route path="transactions" element={<WealthSection />} />
             <Route path="*" element={<Navigate to="/wealth/dashboard" replace />} />
           </Route>

@@ -6,10 +6,11 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.utils import timezone
 
 from users.permissions import HasWealthAccess
-from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile
-from .serializers import CashFlowCategorySerializer, CashFlowEntrySerializer
+from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile, WealthMilestone
+from .serializers import CashFlowCategorySerializer, CashFlowEntrySerializer, WealthMilestoneSerializer
 
 
 def _profile_payload(user):
@@ -158,3 +159,35 @@ def cash_flow_entry_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     entry = serializer.save()
     return Response(CashFlowEntrySerializer(entry).data)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def wealth_milestones(request):
+    if request.method == 'GET':
+        milestones = WealthMilestone.objects.filter(user=request.user)
+        return Response({
+            'current_year': timezone.localdate().year,
+            'milestones': WealthMilestoneSerializer(milestones, many=True).data,
+        })
+
+    serializer = WealthMilestoneSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    milestone = serializer.save(user=request.user)
+    return Response(WealthMilestoneSerializer(milestone).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def wealth_milestone_detail(request, pk):
+    milestone = get_object_or_404(WealthMilestone, pk=pk, user=request.user)
+    if request.method == 'DELETE':
+        milestone.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = WealthMilestoneSerializer(milestone, data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    milestone = serializer.save()
+    return Response(WealthMilestoneSerializer(milestone).data)
