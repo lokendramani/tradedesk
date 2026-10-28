@@ -11,6 +11,38 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
+# Keep request exception tracebacks in runtime logs when DEBUG is disabled.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+    },
+    'formatters': {
+        'request_errors': {
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        },
+    },
+    'handlers': {
+        'django_request_stderr': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stderr',
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],
+            'formatter': 'request_errors',
+        },
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['django_request_stderr'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+    },
+}
+
 # ── Applications ──────────────────────────────────────
 INSTALLED_APPS = [
     'django.contrib.admin',
