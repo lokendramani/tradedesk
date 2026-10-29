@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.db.models.functions import Lower, Trim
+from django.utils import timezone
 
-from .models import CashFlowCategory, CashFlowEntry
+from .models import CashFlowCategory, CashFlowEntry, WealthMilestone
 
 
 class CashFlowCategorySerializer(serializers.ModelSerializer):
@@ -69,3 +70,62 @@ class CashFlowEntrySerializer(serializers.ModelSerializer):
         ):
             raise serializers.ValidationError('Archived categories cannot be used for new entries.')
         return category
+
+
+class WealthMilestoneSerializer(serializers.ModelSerializer):
+    years_remaining = serializers.SerializerMethodField()
+    future_amount = serializers.SerializerMethodField()
+    required_monthly_sip = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WealthMilestone
+        fields = [
+            'id',
+            'name',
+            'present_amount',
+            'target_year',
+            'inflation_rate',
+            'expected_return_rate',
+            'years_remaining',
+            'future_amount',
+            'required_monthly_sip',
+        ]
+        read_only_fields = ['id', 'years_remaining', 'future_amount', 'required_monthly_sip']
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Goal name cannot be blank.')
+        return value
+
+    def validate_target_year(self, value):
+        current_year = timezone.localdate().year
+        if value <= current_year:
+            raise serializers.ValidationError('Target year must be in the future.')
+        if value > current_year + 100:
+            raise serializers.ValidationError('Target year cannot be more than 100 years away.')
+        return value
+
+    def validate(self, attrs):
+        target_year = attrs.get('target_year', self.instance.target_year if self.instance else None)
+        if target_year is not None:
+            current_year = timezone.localdate().year
+            if target_year <= current_year:
+                raise serializers.ValidationError({'target_year': 'Target year must be in the future.'})
+            if target_year > current_year + 100:
+                raise serializers.ValidationError({'target_year': 'Target year cannot be more than 100 years away.'})
+        return attrs
+
+    def _projection(self, obj):
+        return obj.calculate_projection()
+
+    def get_years_remaining(self, obj):
+        return self._projection(obj)['years_remaining']
+
+    def get_future_amount(self, obj):
+        value = self._projection(obj)['future_amount']
+        return f'{value:.2f}'
+
+    def get_required_monthly_sip(self, obj):
+        value = self._projection(obj)['required_monthly_sip']
+        return f'{value:.2f}' if value is not None else None

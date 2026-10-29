@@ -1,10 +1,11 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from django.conf import settings
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce, Lower, Trim
+from django.utils import timezone
 
 
 class CashFlowProfile(models.Model):
@@ -108,3 +109,74 @@ class CashFlowEntry(models.Model):
 
     def __str__(self):
         return f'{self.name}: {self.amount}'
+
+
+class WealthMilestone(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wealth_milestones',
+    )
+    name = models.CharField(max_length=120)
+    present_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    target_year = models.PositiveSmallIntegerField()
+    inflation_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('7.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
+    )
+    expected_return_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('12.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_milestones'
+        ordering = ['target_year', 'name', 'id']
+
+    @staticmethod
+    def _round_rupees(value):
+        return value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    def calculate_projection(self, current_year=None):
+        """Return time-sensitive goal projections without persisting derived values."""
+        year = current_year if current_year is not None else timezone.localdate().year
+        years_remaining = self.target_year - year
+        number_of_months = years_remaining * 12
+
+        with localcontext() as context:
+            context.prec = 60
+            one = Decimal('1')
+            inflation_factor = (one + self.inflation_rate / Decimal('100')) ** years_remaining
+            future_amount_exact = self.present_amount * inflation_factor
+            future_amount = self._round_rupees(future_amount_exact)
+
+            if number_of_months <= 0:
+                required_monthly_sip = None
+            else:
+                monthly_rate = self.expected_return_rate / Decimal('1200')
+                if monthly_rate == 0:
+                    required_monthly_sip = self._round_rupees(future_amount_exact / number_of_months)
+                else:
+                    future_value_factor = (
+                        ((one + monthly_rate) ** number_of_months - one) / monthly_rate
+                    ) * (one + monthly_rate)
+                    required_monthly_sip = self._round_rupees(future_amount_exact / future_value_factor)
+
+        return {
+            'years_remaining': years_remaining,
+            'future_amount': future_amount,
+            'required_monthly_sip': required_monthly_sip,
+        }
+
+    def __str__(self):
+        return f'{self.name} ({self.target_year})'
