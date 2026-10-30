@@ -16,7 +16,7 @@ import { useAuthStore } from '../../store/authStore'
 
 const wealthNav = [
   { to: '/wealth/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/wealth/funds', label: 'My funds', icon: ChartNoAxesCombined },
+  { to: '/wealth/funds', label: 'Scheme Catalogue', icon: ChartNoAxesCombined },
   { to: '/wealth/portfolio', label: 'Portfolio', icon: WalletCards },
   { to: '/wealth/monthly-expense', label: 'Monthly expense', icon: CircleDollarSign },
   { to: '/wealth/milestones', label: 'Milestones', icon: Milestone },

@@ -34,14 +34,18 @@ class LoginSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     modules = serializers.SerializerMethodField()
+    is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model  = User
-        fields = ['id', 'email', 'full_name', 'role', 'created_at', 'modules']
+        fields = ['id', 'email', 'full_name', 'role', 'created_at', 'modules', 'is_admin']
         read_only_fields = fields
 
     def get_modules(self, user):
         return get_active_module_codes(user)
+
+    def get_is_admin(self, user):
+        return user.role == User.Role.ADMIN or user.is_staff
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -56,5 +60,6 @@ def get_tokens_for_user(user):
             'full_name': user.full_name,
             'role':      user.role,
             'modules':   modules,
+            'is_admin':  user.role == User.Role.ADMIN or user.is_staff,
         }
     }
