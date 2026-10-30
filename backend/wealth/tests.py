@@ -7,7 +7,7 @@ from threading import Lock
 from time import sleep
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -857,6 +857,28 @@ class SchemeCatalogueApiTests(TestCase):
         self.assertIn('persistence:', failure.error_summary)
         self.assertRegex(failure.error_summary, r'run_id=[0-9a-f]{32}')
         self.assertNotIn('simulated persistence failure', failure.error_summary)
+
+    def test_catalogue_existence_database_error_returns_sanitized_503_and_logs_traceback(self):
+        database_error = OperationalError('simulated internal database failure')
+        with patch.object(MutualFundScheme.objects, 'exists', side_effect=database_error), \
+             patch('wealth.views.initialize_scheme_catalogue') as initialize:
+            with self.assertLogs('wealth.scheme_catalogue', level='ERROR') as captured:
+                response = self.client.get(self.list_url)
+
+        log_output = '\n'.join(captured.output)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.data['detail'],
+            'The scheme catalogue could not be initialized. Please retry.',
+        )
+        self.assertNotIn('simulated internal database failure', response.data['detail'])
+        self.assertNotIn('Traceback', response.data['detail'])
+        self.assertIn('operation=INITIAL', log_output)
+        self.assertIn('stage=persistence', log_output)
+        self.assertRegex(log_output, r'run_id=[0-9a-f]{32}')
+        self.assertIn('Traceback (most recent call last)', log_output)
+        self.assertIn('OperationalError: simulated internal database failure', log_output)
+        initialize.assert_not_called()
 
     def test_pagination_defaults_caps_and_preserves_effective_page_metadata(self):
         now = timezone.now()

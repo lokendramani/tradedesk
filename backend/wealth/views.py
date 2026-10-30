@@ -12,7 +12,9 @@ from rest_framework.utils.urls import replace_query_param
 
 from users.permissions import HasWealthAccess
 from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile, MutualFundScheme, WealthMilestone
-from .scheme_catalogue import CatalogueError, initialize_scheme_catalogue, refresh_scheme_catalogue
+from .scheme_catalogue import (
+    CatalogueError, catalogue_is_populated, initialize_scheme_catalogue, refresh_scheme_catalogue,
+)
 from .serializers import CashFlowCategorySerializer, CashFlowEntrySerializer, MutualFundSchemeSerializer, WealthMilestoneSerializer
 
 
@@ -220,9 +222,9 @@ class SchemeCataloguePagination(PageNumberPagination):
 
 
 def _initialize_scheme_catalogue_if_empty():
-    if MutualFundScheme.objects.exists():
-        return None
     try:
+        if catalogue_is_populated():
+            return None
         initialize_scheme_catalogue()
     except CatalogueError:
         return Response(

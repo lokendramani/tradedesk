@@ -48,6 +48,19 @@ class CatalogueError(Exception):
     """Safe, user-displayable catalogue import error."""
 
 
+def catalogue_is_populated():
+    """Check catalogue availability while logging DB errors with safe context."""
+    run_id = uuid4().hex
+    try:
+        return MutualFundScheme.objects.exists()
+    except Exception as exc:
+        logger.exception(
+            'Scheme catalogue operation failed: operation=INITIAL stage=persistence run_id=%s',
+            run_id,
+        )
+        raise CatalogueError('Could not check the scheme catalogue; please retry.') from exc
+
+
 def download_source():
     request = urllib.request.Request(SOURCE_URL, headers={'User-Agent': 'WealthOnCruise/1.0'})
     try:
