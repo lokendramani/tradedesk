@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.db.models.functions import Lower, Trim
 from django.utils import timezone
 
-from .models import CashFlowCategory, CashFlowEntry, WealthMilestone
+from .models import CashFlowCategory, CashFlowEntry, MutualFundScheme, WealthMilestone
 
 
 class CashFlowCategorySerializer(serializers.ModelSerializer):
@@ -129,3 +129,13 @@ class WealthMilestoneSerializer(serializers.ModelSerializer):
     def get_required_monthly_sip(self, obj):
         value = self._projection(obj)['required_monthly_sip']
         return f'{value:.2f}' if value is not None else None
+
+
+class MutualFundSchemeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MutualFundScheme
+        fields = [
+            'scheme_code', 'scheme_name', 'fund_house', 'category_name',
+            'asset_class', 'plan_type', 'option_type', 'isin_growth',
+            'isin_div_payout', 'isin_div_reinvestment',
+        ]

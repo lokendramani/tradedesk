@@ -5,6 +5,7 @@ backend/**/__pycache__/
 backend/**/*.pyc
 backend/*.pyc
 backend/db.sqlite3
+backend/local_scheme_catalogue.sqlite3
 backend/.env
 backend/staticfiles/
 

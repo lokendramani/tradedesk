@@ -3,14 +3,19 @@ from django.db.models import Sum
 from django.db.models.functions import Lower, Trim
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
+from rest_framework.utils.urls import replace_query_param
 
 from users.permissions import HasWealthAccess
-from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile, WealthMilestone
-from .serializers import CashFlowCategorySerializer, CashFlowEntrySerializer, WealthMilestoneSerializer
+from .models import CashFlowCategory, CashFlowEntry, CashFlowProfile, MutualFundScheme, WealthMilestone
+from .scheme_catalogue import (
+    CatalogueError, catalogue_is_populated, initialize_scheme_catalogue, refresh_scheme_catalogue,
+)
+from .serializers import CashFlowCategorySerializer, CashFlowEntrySerializer, MutualFundSchemeSerializer, WealthMilestoneSerializer
 
 
 def _profile_payload(user):
@@ -191,3 +196,117 @@ def wealth_milestone_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     milestone = serializer.save()
     return Response(WealthMilestoneSerializer(milestone).data)
+
+
+class SchemeCataloguePagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+    def _page_link(self, page_number):
+        url = self.request.build_absolute_uri()
+        url = replace_query_param(url, self.page_query_param, page_number)
+        if self.page_size_query_param:
+            url = replace_query_param(url, self.page_size_query_param, self.page.paginator.per_page)
+        return url
+
+    def get_next_link(self):
+        if not self.page.has_next():
+            return None
+        return self._page_link(self.page.next_page_number())
+
+    def get_previous_link(self):
+        if not self.page.has_previous():
+            return None
+        return self._page_link(self.page.previous_page_number())
+
+
+def _initialize_scheme_catalogue_if_empty():
+    try:
+        if catalogue_is_populated():
+            return None
+        initialize_scheme_catalogue()
+    except CatalogueError:
+        return Response(
+            {'detail': 'The scheme catalogue could not be initialized. Please retry.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return None
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def scheme_catalogue_filters(request):
+    unavailable = _initialize_scheme_catalogue_if_empty()
+    if unavailable:
+        return unavailable
+    schemes = MutualFundScheme.objects.all()
+    return Response({
+        'fund_houses': list(schemes.order_by().values_list('fund_house', flat=True).distinct().exclude(fund_house='').order_by('fund_house')),
+        'categories': list(schemes.order_by().values_list('category_name', flat=True).distinct().exclude(category_name='').order_by('category_name')),
+        'asset_classes': [{'value': value, 'label': label} for value, label in MutualFundScheme.AssetClass.choices],
+        'plan_types': [{'value': value, 'label': label} for value, label in MutualFundScheme.PlanType.choices],
+        'option_types': [{'value': value, 'label': label} for value, label in MutualFundScheme.OptionType.choices],
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def scheme_catalogue(request):
+    from django.db.models import Q
+
+    queryset = MutualFundScheme.objects.all()
+    search = request.query_params.get('search', '').strip()
+    if search:
+        queryset = queryset.filter(Q(scheme_name__icontains=search) | Q(scheme_code__icontains=search) | Q(fund_house__icontains=search))
+
+    filters = {
+        'fund_house': ('fund_house', None),
+        'category': ('category_name', None),
+        'asset_class': ('asset_class', MutualFundScheme.AssetClass.values),
+        'plan_type': ('plan_type', MutualFundScheme.PlanType.values),
+        'option_type': ('option_type', MutualFundScheme.OptionType.values),
+    }
+    for param, (field, choices) in filters.items():
+        value = request.query_params.get(param, '').strip()
+        if not value:
+            continue
+        if choices is not None and value not in choices:
+            return Response({param: ['Invalid filter value.']}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = queryset.filter(**{field: value})
+
+    unavailable = _initialize_scheme_catalogue_if_empty()
+    if unavailable:
+        return unavailable
+
+    paginator = SchemeCataloguePagination()
+    page = paginator.paginate_queryset(queryset, request)
+    return paginator.get_paginated_response(MutualFundSchemeSerializer(page, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def scheme_catalogue_detail(request, scheme_code):
+    unavailable = _initialize_scheme_catalogue_if_empty()
+    if unavailable:
+        return unavailable
+    scheme = get_object_or_404(MutualFundScheme, scheme_code=scheme_code)
+    return Response(MutualFundSchemeSerializer(scheme).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, HasWealthAccess])
+def scheme_catalogue_refresh(request):
+    user = request.user
+    if getattr(user, 'role', None) != 'ADMIN' and not getattr(user, 'is_staff', False):
+        return Response({'detail': 'Administrator permission is required.'}, status=status.HTTP_403_FORBIDDEN)
+    if 'source_url' in request.data or 'url' in request.data or 'file' in request.data:
+        return Response({'detail': 'The catalogue source cannot be overridden.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        result = refresh_scheme_catalogue()
+    except CatalogueError:
+        return Response(
+            {'detail': 'The scheme catalogue refresh failed. Please retry.'},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    return Response(result)

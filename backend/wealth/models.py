@@ -180,3 +180,86 @@ class WealthMilestone(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.target_year})'
+
+
+class MutualFundScheme(models.Model):
+    class AssetClass(models.TextChoices):
+        EQUITY = 'EQUITY', 'Equity'
+        DEBT = 'DEBT', 'Debt'
+        HYBRID = 'HYBRID', 'Hybrid'
+        OTHER = 'OTHER', 'Other'
+        UNKNOWN = 'UNKNOWN', 'Unknown'
+
+    class PlanType(models.TextChoices):
+        DIRECT = 'DIRECT', 'Direct'
+        REGULAR = 'REGULAR', 'Regular'
+        UNKNOWN = 'UNKNOWN', 'Unknown'
+
+    class OptionType(models.TextChoices):
+        GROWTH = 'GROWTH', 'Growth'
+        IDCW = 'IDCW', 'IDCW'
+        OTHER = 'OTHER', 'Other'
+        UNKNOWN = 'UNKNOWN', 'Unknown'
+
+    scheme_code = models.CharField(max_length=32, unique=True)
+    scheme_name = models.CharField(max_length=300)
+    fund_house = models.CharField(max_length=180, blank=True)
+    category_name = models.CharField(max_length=180, blank=True)
+    asset_class = models.CharField(max_length=10, choices=AssetClass.choices, default=AssetClass.UNKNOWN)
+    plan_type = models.CharField(max_length=10, choices=PlanType.choices, default=PlanType.UNKNOWN)
+    option_type = models.CharField(max_length=10, choices=OptionType.choices, default=OptionType.UNKNOWN)
+    isin_growth = models.CharField(max_length=20, null=True, blank=True)
+    isin_div_payout = models.CharField(max_length=20, null=True, blank=True)
+    isin_div_reinvestment = models.CharField(max_length=20, null=True, blank=True)
+    last_seen_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_mutual_fund_schemes'
+        ordering = ['scheme_name', 'scheme_code']
+        indexes = [
+            models.Index(fields=['fund_house'], name='wealth_scheme_fund_house_idx'),
+            models.Index(fields=['asset_class', 'plan_type', 'option_type'], name='wealth_scheme_filters_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.scheme_code}: {self.scheme_name}'
+
+
+class SchemeCatalogueImportLog(models.Model):
+    class Operation(models.TextChoices):
+        INITIAL = 'INITIAL', 'Initial'
+        REFRESH = 'REFRESH', 'Refresh'
+
+    class Status(models.TextChoices):
+        RUNNING = 'RUNNING', 'Running'
+        SUCCESS = 'SUCCESS', 'Success'
+        SKIPPED = 'SKIPPED', 'Skipped'
+        FAILED = 'FAILED', 'Failed'
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    operation = models.CharField(max_length=10, choices=Operation.choices)
+    status = models.CharField(max_length=10, choices=Status.choices)
+    source = models.URLField(max_length=300)
+    parsed_count = models.PositiveIntegerField(default=0)
+    valid_count = models.PositiveIntegerField(default=0)
+    inserted_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    unchanged_count = models.PositiveIntegerField(default=0)
+    rejected_count = models.PositiveIntegerField(default=0)
+    error_summary = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        db_table = 'wealth_scheme_catalogue_import_logs'
+        ordering = ['-started_at', '-id']
+
+
+class SchemeCatalogueRunLock(models.Model):
+    """Singleton row used to serialize initialization and refresh operations."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+
+    class Meta:
+        db_table = 'wealth_scheme_catalogue_run_lock'
