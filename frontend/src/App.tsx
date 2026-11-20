@@ -24,10 +24,11 @@ import {
 } from './pages/ModuleAccess/ModuleAccess'
 import WealthLayout from './pages/Wealth/WealthLayout'
 import WealthDashboard from './pages/Wealth/WealthDashboard'
-import WealthSection from './pages/Wealth/WealthSection'
 import MonthlyCashFlow from './pages/Wealth/MonthlyCashFlow'
 import Milestones from './pages/Wealth/Milestones'
 import SchemeCatalogue from './pages/Wealth/SchemeCatalogue'
+import WealthPortfolio from './pages/Wealth/WealthPortfolio'
+import Transactions from './pages/Wealth/Transactions'
 import type { ModuleCode } from './types'
 import { getTradePathRedirect } from './utils/moduleRouting'
 import { getPortfolioRootState } from './utils/portfolioSetup'
@@ -126,10 +127,10 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<WealthDashboard />} />
             <Route path="funds" element={<SchemeCatalogue />} />
-            <Route path="portfolio" element={<WealthSection />} />
+            <Route path="portfolio" element={<WealthPortfolio />} />
             <Route path="monthly-expense" element={<MonthlyCashFlow />} />
             <Route path="milestones" element={<Milestones />} />
-            <Route path="transactions" element={<WealthSection />} />
+            <Route path="transactions" element={<Transactions />} />
             <Route path="*" element={<Navigate to="/wealth/dashboard" replace />} />
           </Route>
 

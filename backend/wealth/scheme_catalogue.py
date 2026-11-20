@@ -14,7 +14,7 @@ import certifi
 from django.db import transaction
 from django.utils import timezone
 
-from .models import MutualFundScheme, SchemeCatalogueImportLog, SchemeCatalogueRunLock
+from .models import MutualFundScheme, SchemeCatalogueImportLog, SchemeCatalogueRunLock, WealthFundHouse
 
 logger = logging.getLogger(__name__)
 
@@ -272,20 +272,35 @@ def _import(operation):
 
             stage = 'persistence'
             now = timezone.now()
+            fund_house_ids = {}
+            for name in dict.fromkeys(
+                record['fund_house'] for record in result.records
+                if record['fund_house'] and record['fund_house'].strip()
+            ):
+                fund_house, _ = WealthFundHouse.objects.get_or_create(name=name)
+                fund_house_ids[name] = fund_house.pk
             existing = {scheme.scheme_code: scheme for scheme in MutualFundScheme.objects.all()}
             to_create, changed_rows = [], []
             inserted = updated = unchanged = 0
             for data in result.records:
-                data = {**data, 'last_seen_at': now}
+                data = {
+                    **data,
+                    'fund_house_master_id': fund_house_ids.get(data['fund_house']),
+                    'last_seen_at': now,
+                }
                 scheme = existing.get(data['scheme_code'])
                 if scheme is None:
                     to_create.append(MutualFundScheme(**data))
                     inserted += 1
                     continue
-                changed = any(getattr(scheme, field) != data[field] for field in METADATA_FIELDS)
+                changed = (
+                    any(getattr(scheme, field) != data[field] for field in METADATA_FIELDS)
+                    or scheme.fund_house_master_id != data['fund_house_master_id']
+                )
                 if changed:
                     for field in METADATA_FIELDS:
                         setattr(scheme, field, data[field])
+                    scheme.fund_house_master_id = data['fund_house_master_id']
                     scheme.updated_at = now
                     updated += 1
                 else:
@@ -298,7 +313,9 @@ def _import(operation):
                 MutualFundScheme.objects.bulk_create(to_create, batch_size=500)
             if changed_rows:
                 MutualFundScheme.objects.bulk_update(
-                    changed_rows, list(METADATA_FIELDS) + ['last_seen_at', 'updated_at'], batch_size=500,
+                    changed_rows,
+                    list(METADATA_FIELDS) + ['fund_house_master', 'last_seen_at', 'updated_at'],
+                    batch_size=500,
                 )
             log = _save_log(
                 operation, SchemeCatalogueImportLog.Status.SUCCESS, result,
