@@ -53,5 +53,6 @@ existing parsing and import flow otherwise unchanged.
 
 Apply and verify migrations only against Development Supabase. See the
 repository instructions for the required environment check and approval
-boundary; tests use `config.test_settings` and an isolated in-memory SQLite
-database.
+boundary. Do not use SQLite as a substitute for PostgreSQL verification;
+database-backed Wealth tests must use the verified Development Supabase
+workflow.

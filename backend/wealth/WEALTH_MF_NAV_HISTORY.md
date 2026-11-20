@@ -48,12 +48,10 @@ All endpoints require authentication and Wealth module access. NAV history is re
 
 ## Local verification
 
-Run isolated Wealth tests without connecting to Supabase:
-
-```powershell
-cd backend
-python manage.py test wealth --settings=config.test_settings
-```
+Run database-backed Wealth tests only through the established, verified
+Development Supabase PostgreSQL workflow. Do not use the `config.test_settings`
+SQLite database as a substitute. Pure tests that do not require database
+access can be run independently.
 
 Migration `0009_wealth_mf_nav_history` creates the NAV history, per-scheme load state, manual update run, and separate updater lock tables, plus the NAV uniqueness/check constraints and latest-date index. It does not transform existing records. Do not apply it until the migration has been reviewed and the Development Supabase target has been verified in the user's separate PowerShell environment.
 
