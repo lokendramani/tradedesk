@@ -23,7 +23,7 @@ from .models import (
     WealthTransactionAudit,
 )
 from .holdings import calculate_moving_average_cost
-from .serializers import WealthSIPConfirmSerializer
+from .serializers import WealthMFTransactionDetailSerializer, WealthSIPConfirmSerializer
 from .sip import calculate_sip_purchase_values, monthly_installment_date
 
 
@@ -510,6 +510,26 @@ class WealthMFTransactionDetailAccountingPureTests(SimpleTestCase):
                     self.make_detail(kind, amount='99.99', cashflow=cashflow), 'amount',
                 )
 
+    def test_cashflow_equations_include_charges_for_regular_unit_transactions(self):
+        cases = (
+            (WealthTransaction.TransactionType.PURCHASE, '-105.00'),
+            (WealthTransaction.TransactionType.SWITCH_IN, '-105.00'),
+            (WealthTransaction.TransactionType.REDEMPTION, '95.00'),
+            (WealthTransaction.TransactionType.SWITCH_OUT, '95.00'),
+        )
+        for kind, expected_cashflow in cases:
+            with self.subTest(kind=kind):
+                self.make_detail(
+                    kind, charges='5.00', cashflow=expected_cashflow,
+                ).clean()
+                wrong_cashflow = '-100.00' if expected_cashflow.startswith('-') else '100.00'
+                self.assert_detail_invalid(
+                    self.make_detail(
+                        kind, charges='5.00', cashflow=wrong_cashflow,
+                    ),
+                    'cashflow',
+                )
+
     def test_sip_purchase_validates_rounded_units_and_total_debit_cashflow(self):
         self.make_detail(
             WealthTransaction.TransactionType.PURCHASE, source='SIP',
@@ -540,9 +560,9 @@ class WealthMFTransactionDetailAccountingPureTests(SimpleTestCase):
 
     def test_dividend_bonus_and_other_do_not_apply_units_nav_amount_rule(self):
         cases = (
-            (WealthTransaction.TransactionType.DIVIDEND, '1.0000', '2.0000', '7.00', '0.00', '7.00'),
+            (WealthTransaction.TransactionType.DIVIDEND, '1.0000', '2.0000', '7.00', '1.00', '3.00'),
             (WealthTransaction.TransactionType.BONUS, '1.0000', '2.0000', '7.00', '0.00', '0.00'),
-            (WealthTransaction.TransactionType.OTHER, '1.0000', '2.0000', '7.00', '1.00', '-8.00'),
+            (WealthTransaction.TransactionType.OTHER, '1.0000', '2.0000', '7.00', '1.00', '12.00'),
         )
         for kind, units, nav, amount, charges, cashflow in cases:
             with self.subTest(kind=kind):
@@ -550,6 +570,21 @@ class WealthMFTransactionDetailAccountingPureTests(SimpleTestCase):
                     kind, units=units, nav=nav, amount=amount, charges=charges,
                     cashflow=cashflow,
                 ).clean()
+
+    def test_maximum_serializer_valid_units_and_nav_return_validation_not_decimal_overflow(self):
+        detail_serializer = WealthMFTransactionDetailSerializer()
+        units = detail_serializer.fields['units'].run_validation('999999999999999999.9999')
+        nav = detail_serializer.fields['nav'].run_validation('99999999999999.9999')
+        amount = detail_serializer.fields['amount'].run_validation('9999999999999999.99')
+        cashflow = detail_serializer.fields['cashflow'].run_validation('-9999999999999999.99')
+        detail = WealthMFTransactionDetail(
+            units=units, nav=nav, amount=amount, charges=Decimal('0'), cashflow=cashflow,
+        )
+        detail.transaction = WealthTransaction(
+            transaction_type=WealthTransaction.TransactionType.PURCHASE,
+            source=WealthTransaction.Source.MANUAL,
+        )
+        self.assert_detail_invalid(detail, 'amount')
 
 
 class WealthMilestoneCalculationTests(TestCase):
@@ -1462,23 +1497,53 @@ class WealthMFTransactionApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('mf_detail', response.data)
 
-    def test_nonzero_charges_and_independent_signed_cashflow_are_preserved(self):
+    def test_cashflow_equations_include_charges_on_create(self):
         purchase = self.transaction_payload()
-        purchase['mf_detail'].update(charges='12.34', cashflow='-100.01')
+        purchase['mf_detail'].update(charges='12.34', cashflow='-112.34')
         created = self.client.post(reverse('wealth-transactions'), purchase, format='json')
         self.assertEqual(created.status_code, 201, created.data)
         self.assertEqual(created.data['mf_detail']['amount'], '100.00')
         self.assertEqual(created.data['mf_detail']['charges'], '12.34')
-        self.assertEqual(created.data['mf_detail']['cashflow'], '-100.01')
+        self.assertEqual(created.data['mf_detail']['cashflow'], '-112.34')
+
+        invalid_purchase = self.transaction_payload(date='2026-10-01')
+        invalid_purchase['mf_detail'].update(charges='12.34', cashflow='-100.01')
+        rejected_purchase = self.client.post(
+            reverse('wealth-transactions'), invalid_purchase, format='json',
+        )
+        self.assertEqual(rejected_purchase.status_code, 400)
+        self.assertIn('cashflow', rejected_purchase.data['mf_detail'])
 
         redemption = self.transaction_payload(scheme_code='120603', date='2026-10-22')
         redemption.update(transaction_type='REDEMPTION', source='MANUAL')
-        redemption['mf_detail'].update(charges='4.56', cashflow='87.65')
+        redemption['mf_detail'].update(charges='4.56', cashflow='95.44')
         redeemed = self.client.post(reverse('wealth-transactions'), redemption, format='json')
         self.assertEqual(redeemed.status_code, 201, redeemed.data)
         self.assertEqual(redeemed.data['mf_detail']['amount'], '100.00')
         self.assertEqual(redeemed.data['mf_detail']['charges'], '4.56')
-        self.assertEqual(redeemed.data['mf_detail']['cashflow'], '87.65')
+        self.assertEqual(redeemed.data['mf_detail']['cashflow'], '95.44')
+
+        invalid_redemption = self.transaction_payload(scheme_code='120603', date='2026-10-23')
+        invalid_redemption.update(transaction_type='REDEMPTION', source='MANUAL')
+        invalid_redemption['mf_detail'].update(charges='4.56', cashflow='87.65')
+        rejected_redemption = self.client.post(
+            reverse('wealth-transactions'), invalid_redemption, format='json',
+        )
+        self.assertEqual(rejected_redemption.status_code, 400)
+        self.assertIn('cashflow', rejected_redemption.data['mf_detail'])
+
+    def test_serializer_valid_maximum_decimal_product_returns_validation_error(self):
+        maximum_payload = self.transaction_payload(amount='9999999999999999.99')
+        maximum_payload['mf_detail'].update(
+            units='999999999999999999.9999',
+            nav='99999999999999.9999',
+            cashflow='-9999999999999999.99',
+        )
+        response = self.client.post(
+            reverse('wealth-transactions'), maximum_payload, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('amount', response.data['mf_detail'])
 
     def test_direct_orm_detail_save_runs_application_validation(self):
         instrument = WealthInstrument.objects.create(scheme=self.scheme)
@@ -1514,18 +1579,33 @@ class WealthMFTransactionApiTests(TestCase):
 
         response = self.client.patch(
             detail_url,
-            {'mf_detail': {'units': '5.0000', 'nav': '21.0000', 'amount': '105.00'}},
+            {'mf_detail': {
+                'units': '5.0000', 'nav': '21.0000', 'amount': '105.00',
+                'charges': '1.25', 'cashflow': '-106.25',
+            }},
             format='json',
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['mf_detail']['amount'], '105.00')
 
-        for field, value in (('charges', '1.25'), ('cashflow', '-101.25')):
-            response = self.client.patch(
-                detail_url, {'mf_detail': {field: value}}, format='json',
-            )
-            self.assertEqual(response.status_code, 200, (field, response.data))
-            self.assertEqual(response.data['mf_detail'][field], value)
+        wrong_cashflow = self.client.patch(
+            detail_url, {'mf_detail': {'cashflow': '-106.24'}}, format='json',
+        )
+        self.assertEqual(wrong_cashflow.status_code, 400)
+        self.assertIn('cashflow', wrong_cashflow.data['mf_detail'])
+
+        wrong_charges = self.client.patch(
+            detail_url, {'mf_detail': {'charges': '2.00'}}, format='json',
+        )
+        self.assertEqual(wrong_charges.status_code, 400)
+        self.assertIn('cashflow', wrong_charges.data['mf_detail'])
+
+        valid_change = self.client.patch(
+            detail_url,
+            {'mf_detail': {'charges': '2.00', 'cashflow': '-107.00'}}, format='json',
+        )
+        self.assertEqual(valid_change.status_code, 200, valid_change.data)
+        self.assertEqual(valid_change.data['mf_detail']['cashflow'], '-107.00')
 
     def test_purchase_redemption_and_sip_are_accounted_with_explicit_cash_direction(self):
         purchase = self.transaction_payload(date='2026-09-30', source='SIP')
@@ -1996,9 +2076,10 @@ class WealthMFTransactionApiTests(TestCase):
         url = reverse('wealth-switch-group-detail', args=[group_id])
         switch_out = self.transaction_payload(date='2026-11-01')
         switch_out.update(transaction_type='SWITCH_OUT', notes='updated source')
-        switch_out['mf_detail']['cashflow'] = '100.00'
+        switch_out['mf_detail'].update(charges='5.00', cashflow='95.00')
         switch_in = self.transaction_payload(scheme_code='120603', date='2026-11-01')
         switch_in.update(transaction_type='SWITCH_IN', notes='updated destination')
+        switch_in['mf_detail'].update(charges='2.00', cashflow='-102.00')
 
         updated = self.client.patch(url, {'switch_out': switch_out, 'switch_in': switch_in}, format='json')
         self.assertEqual(updated.status_code, 200, updated.data)

@@ -502,25 +502,40 @@ class WealthMFTransactionDetail(models.Model):
         if transaction_type in unit_transactions and self.amount <= 0:
             errors['amount'] = 'Amount must be greater than zero for this transaction type.'
 
-        if transaction_type in unit_transactions and self.units > 0 and self.nav > 0:
-            if (
-                transaction_type == WealthTransaction.TransactionType.PURCHASE
-                and transaction_source == WealthTransaction.Source.SIP
-            ):
-                expected_units = (self.amount / self.nav).quantize(
-                    Decimal('0.0001'), rounding=ROUND_HALF_UP,
+        if transaction_type in unit_transactions:
+            with localcontext() as decimal_context:
+                # Serializer-valid units and NAV can produce a 34-digit currency
+                # product, beyond Decimal's default precision of 28.
+                decimal_context.prec = max(decimal_context.prec, 50)
+                is_sip_purchase = (
+                    transaction_type == WealthTransaction.TransactionType.PURCHASE
+                    and transaction_source == WealthTransaction.Source.SIP
                 )
-                if self.amount > 0 and self.units != expected_units:
-                    errors['units'] = 'SIP purchase units must equal net amount divided by NAV, rounded to four decimal places.'
-                expected_cashflow = -(self.amount + self.charges)
+                if is_sip_purchase:
+                    if self.amount > 0 and self.nav > 0:
+                        expected_units = (self.amount / self.nav).quantize(
+                            Decimal('0.0001'), rounding=ROUND_HALF_UP,
+                        )
+                        if self.units > 0 and self.units != expected_units:
+                            errors['units'] = 'SIP purchase units must equal net amount divided by NAV, rounded to four decimal places.'
+                elif self.units > 0 and self.nav > 0:
+                    expected_amount = (self.units * self.nav).quantize(
+                        Decimal('0.01'), rounding=ROUND_HALF_UP,
+                    )
+                    if self.amount != expected_amount:
+                        errors['amount'] = 'Amount must equal units multiplied by NAV, rounded to two decimal places.'
+
+                if transaction_type in {
+                    WealthTransaction.TransactionType.PURCHASE,
+                    WealthTransaction.TransactionType.SWITCH_IN,
+                }:
+                    expected_cashflow = -(self.amount + self.charges)
+                    cashflow_rule = 'Cashflow must equal the negative total debit (amount plus charges).'
+                else:
+                    expected_cashflow = self.amount - self.charges
+                    cashflow_rule = 'Cashflow must equal proceeds (amount) less charges.'
                 if self.cashflow != expected_cashflow:
-                    errors['cashflow'] = 'SIP purchase cashflow must equal the negative total debit (amount plus charges).'
-            else:
-                expected_amount = (self.units * self.nav).quantize(
-                    Decimal('0.01'), rounding=ROUND_HALF_UP,
-                )
-                if self.amount != expected_amount:
-                    errors['amount'] = 'Amount must equal units multiplied by NAV, rounded to two decimal places.'
+                    errors['cashflow'] = cashflow_rule
 
         debit_types = {
             WealthTransaction.TransactionType.PURCHASE,
@@ -533,12 +548,12 @@ class WealthMFTransactionDetail(models.Model):
         }
         if transaction_type in debit_types:
             if self.cashflow >= 0:
-                errors['cashflow'] = 'Cashflow for a purchase or switch-in must be negative.'
+                errors.setdefault('cashflow', 'Cashflow for a purchase or switch-in must be negative.')
         elif transaction_type in credit_types:
             if self.amount <= 0:
                 errors['amount'] = 'Amount must be greater than zero for this transaction type.'
             if self.cashflow <= 0:
-                errors['cashflow'] = 'Cashflow for a redemption, switch-out, or dividend must be positive.'
+                errors.setdefault('cashflow', 'Cashflow for a redemption, switch-out, or dividend must be positive.')
         elif transaction_type == WealthTransaction.TransactionType.BONUS:
             if self.units <= 0:
                 errors['units'] = 'Bonus units must be greater than zero.'
