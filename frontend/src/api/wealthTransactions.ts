@@ -252,5 +252,3 @@ export const wealthTransactionsApi = {
     return data
   },
 }
-
-\n
