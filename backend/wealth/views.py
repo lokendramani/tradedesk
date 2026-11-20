@@ -842,7 +842,7 @@ def wealth_holdings(request):
         'instrument__scheme__scheme_name', 'instrument__scheme__plan_type',
         'instrument__scheme__option_type',
     ]
-    if group_by_folio:
+    if group_by_folio or folio_id:
         values.extend(['folio_id', 'folio__folio_number'])
     ordering = ['instrument__scheme__scheme_name']
     if group_by_folio:

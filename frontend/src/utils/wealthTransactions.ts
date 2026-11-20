@@ -88,10 +88,10 @@ export function calculateMFTransactionNumbers(
 ) {
   const unitTypes: WealthTransactionType[] = ['PURCHASE', 'REDEMPTION', 'SWITCH_OUT', 'SWITCH_IN']
   const amount = unitTypes.includes(type)
-    ? (() => { const value = Number(units) * Number(nav); return Number.isFinite(value) && value > 0 ? value.toFixed(2) : '' })()
+    ? multiplyToCurrency(units, nav)
     : ''
   const stampDutyEligible = ['PURCHASE', 'SWITCH_IN'].includes(type) && date >= '2020-07-01' && amount !== ''
-  const stampDuty = stampDutyEligible ? (Number(amount) * 0.00005).toFixed(2) : '0.00'
+  const stampDuty = stampDutyEligible ? ratioToCurrency(currencyToCents(amount) * 5n, 100_000n) : '0.00'
   const charges = manualCharges ? statementCharges : stampDuty
   const source: WealthMFTransactionDetail['charges_source'] = manualCharges ? 'MANUAL' : 'AUTOMATIC'
   const chargesBreakdown: Record<string, string> = manualCharges
@@ -99,9 +99,9 @@ export function calculateMFTransactionNumbers(
     : (stampDutyEligible ? { stamp_duty: stampDuty } : {})
   const cashAmount = amount || amountOverride
   const cashflow = ['PURCHASE', 'SWITCH_IN'].includes(type) && cashAmount
-    ? (-(Number(cashAmount) + Number(charges))).toFixed(2)
+    ? formatCurrencyCents(-(currencyToCents(cashAmount) + currencyToCents(charges)))
     : ['REDEMPTION', 'SWITCH_OUT', 'DIVIDEND'].includes(type) && cashAmount
-      ? (Number(cashAmount) - Number(charges)).toFixed(2)
+      ? formatCurrencyCents(currencyToCents(cashAmount) - currencyToCents(charges))
       : type === 'BONUS' ? '0.00' : ''
   return {
     amount,
@@ -110,6 +110,61 @@ export function calculateMFTransactionNumbers(
     chargesSource: source,
     chargesBreakdown,
   }
+}
+
+export function requiresFolioSelectionForRedemption(
+  schemeCode: string | null | undefined,
+  selectedFolioId: string | null | undefined,
+  holdings: Array<{ scheme_code: string; folio_id: string | null; units: string }>,
+): boolean {
+  if (!schemeCode || selectedFolioId) return false
+  const positions = holdings.filter((holding) => holding.scheme_code === schemeCode && Number(holding.units) > 0)
+  return positions.some((holding) => holding.folio_id !== null)
+    && !positions.some((holding) => holding.folio_id === null)
+}
+
+function parseDecimal(value: string): { coefficient: bigint; scale: number } | null {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value.trim())
+  if (!match) return null
+  const fraction = match[3] ?? ''
+  return { coefficient: BigInt(`${match[1]}${match[2]}${fraction}`), scale: fraction.length }
+}
+
+function roundHalfUp(numerator: bigint, denominator: bigint): bigint {
+  if (denominator <= 0n) return 0n
+  const negative = numerator < 0n
+  const absolute = negative ? -numerator : numerator
+  const quotient = absolute / denominator
+  const rounded = quotient + (absolute % denominator * 2n >= denominator ? 1n : 0n)
+  return negative ? -rounded : rounded
+}
+
+function multiplyToCurrency(left: string, right: string): string {
+  const a = parseDecimal(left)
+  const b = parseDecimal(right)
+  if (!a || !b || a.coefficient <= 0n || b.coefficient <= 0n) return ''
+  const product = a.coefficient * b.coefficient
+  const divisor = 10n ** BigInt(a.scale + b.scale)
+  return formatCurrencyCents(roundHalfUp(product * 100n, divisor))
+}
+
+function currencyToCents(value: string): bigint {
+  const parsed = parseDecimal(value)
+  if (!parsed) return 0n
+  const scaleDelta = parsed.scale - 2
+  return scaleDelta <= 0
+    ? parsed.coefficient * 10n ** BigInt(-scaleDelta)
+    : roundHalfUp(parsed.coefficient, 10n ** BigInt(scaleDelta))
+}
+
+function ratioToCurrency(numerator: bigint, denominator: bigint): string {
+  return formatCurrencyCents(roundHalfUp(numerator, denominator))
+}
+
+function formatCurrencyCents(cents: bigint): string {
+  const sign = cents < 0n ? '-' : ''
+  const absolute = cents < 0n ? -cents : cents
+  return `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`
 }
 
 export interface TransactionHistoryRow {

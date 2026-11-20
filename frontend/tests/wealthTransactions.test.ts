@@ -16,6 +16,7 @@ import {
   formatWealthDecimal,
   paginateTransactionRows,
   resolveWealthFolioId,
+  requiresFolioSelectionForRedemption,
   updateSwitchLegDraft,
   validateAvailableRedemption,
   validateWealthDecimal,
@@ -60,6 +61,16 @@ test('transaction math derives unit value, stamp duty and cashflow while leaving
     amount: '400.00', charges: '12.50', cashflow: '387.50', chargesSource: 'MANUAL', chargesBreakdown: { statement_charges: '12.50' },
   })
   assert.equal(calculateMFTransactionNumbers('SWITCH_IN', '2019-06-01', '2', '12', '0', false).charges, '0.00')
+})
+
+test('transaction amount and cashflow use decimal-safe half-up currency rounding', () => {
+  const purchase = calculateMFTransactionNumbers('PURCHASE', '2026-01-01', '1.0000', '1.0050', '0.00', true)
+  assert.equal(purchase.amount, '1.01')
+  assert.equal(purchase.cashflow, '-1.01')
+
+  const chargedPurchase = calculateMFTransactionNumbers('PURCHASE', '2026-01-01', '1.0000', '1.0050', '0.01', true)
+  assert.equal(chargedPurchase.amount, '1.01')
+  assert.equal(chargedPurchase.cashflow, '-1.02')
 })
 
 test('SIP confirmation derives units from scheduled amount and NAV, with editable charges', () => {
@@ -247,4 +258,18 @@ test('redemption unit validation blocks nonpositive and excess requests', () => 
   assert.match(validateAvailableRedemption('5.0001', '5.0000') ?? '', /exceeds available/)
   assert.match(validateAvailableRedemption('0', '5.0000') ?? '', /greater than zero/)
   assert.match(validateAvailableRedemption('1.0000', '-2.0000') ?? '', /exceeds available/)
+})
+
+test('redemption from an aggregated scheme requires a source folio when units are assigned', () => {
+  const holdings = [
+    { scheme_code: '100001', folio_id: 'folio-a', units: '3.0000' },
+    { scheme_code: '100001', folio_id: 'folio-b', units: '2.0000' },
+  ]
+  assert.equal(requiresFolioSelectionForRedemption('100001', null, holdings), true)
+  assert.equal(requiresFolioSelectionForRedemption('100001', 'folio-a', holdings), false)
+  assert.equal(requiresFolioSelectionForRedemption('100002', null, holdings), false)
+  assert.equal(requiresFolioSelectionForRedemption('100001', null, [
+    ...holdings,
+    { scheme_code: '100001', folio_id: null, units: '1.0000' },
+  ]), false)
 })

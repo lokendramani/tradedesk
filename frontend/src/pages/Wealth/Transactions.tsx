@@ -32,6 +32,7 @@ import {
   formatWealthDecimal,
   paginateTransactionRows,
   resolveWealthFolioId,
+  requiresFolioSelectionForRedemption,
   updateSwitchLegDraft,
   validateAvailableRedemption,
   validateWealthDecimal,
@@ -176,6 +177,8 @@ function TransactionEditor({
     && existing.folio === (draft.folio || null)
   const available = String(currentPosition + (restoresEditedRedemption ? Number(existing?.mf_detail.units ?? 0) : 0))
   const type = draft.transaction_type
+  const folioSelectionRequired = type === 'REDEMPTION'
+    && requiresFolioSelectionForRedemption(scheme?.scheme_code, draft.folio, holdings)
   const setDetail = (mf_detail: WealthMFTransactionDetail) => setDraft((current) => ({ ...current, mf_detail }))
   const autoAmount = ['PURCHASE', 'REDEMPTION', 'SWITCH_OUT', 'SWITCH_IN'].includes(type)
   const autoCashflow = ['PURCHASE', 'REDEMPTION', 'SWITCH_OUT', 'SWITCH_IN', 'DIVIDEND', 'BONUS'].includes(type)
@@ -201,6 +204,7 @@ function TransactionEditor({
     const detailError = validateDetail(type, draft.mf_detail)
     if (detailError) { setError(detailError); return }
     if (type === 'REDEMPTION') {
+      if (folioSelectionRequired) { setError('Choose a folio that holds this scheme before redeeming.'); return }
       const unitsError = validateAvailableRedemption(draft.mf_detail.units, available)
       if (unitsError) { setError(unitsError); return }
     }
@@ -221,7 +225,7 @@ function TransactionEditor({
       </div>
       <SchemePicker value={scheme} onChange={(next) => { setScheme(next); setDraft((current) => ({ ...current, scheme_code: next?.scheme_code ?? '' })) }} />
       <div className="grid gap-3 sm:grid-cols-2">
-        <FolioSelect value={draft.folio ?? null} folios={folios} onChange={(folio) => setDraft({ ...draft, folio })} />
+        <FolioSelect value={draft.folio ?? null} folios={folios} required={folioSelectionRequired} onChange={(folio) => setDraft({ ...draft, folio })} />
         <label className={labelClass}>Source
           <select className={inputClass} value={draft.source ?? 'MANUAL'} onChange={(event) => setDraft({ ...draft, source: event.target.value as WealthTransactionInput['source'] })}>
             <option value="MANUAL">Manual</option>{type === 'PURCHASE' && <option value="SIP">SIP</option>}<option value="IMPORT">Import</option><option value="OTHER">Other</option>
@@ -229,7 +233,7 @@ function TransactionEditor({
         </label>
       </div>
       <label className={labelClass}>Source reference<input className={inputClass} maxLength={120} value={draft.source_reference ?? ''} onChange={(event) => setDraft({ ...draft, source_reference: event.target.value })} /></label>
-      {type === 'REDEMPTION' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e6e0cd] bg-[#faf8f0] px-3 py-2.5 text-xs text-[#596f63]">Available units in this scheme and folio: <strong className="font-mono">{formatWealthDecimal(available, 4)}</strong><span className="ml-1 text-[10px] text-[#8d968f]">(full or partial redemption; limit validated in this form)</span><button type="button" onClick={() => setDetail({ ...draft.mf_detail, units: Number(available).toFixed(4) })} className="rounded-md border border-[#e1d9bd] bg-white px-2 py-1 text-[10px] font-semibold text-[#715d2c]">Redeem all</button></div>}
+      {type === 'REDEMPTION' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e6e0cd] bg-[#faf8f0] px-3 py-2.5 text-xs text-[#596f63]">{folioSelectionRequired ? <span className="text-[#9c4d37]">Select a folio to see available units for this scheme.</span> : <>Available units in this scheme and folio: <strong className="font-mono">{formatWealthDecimal(available, 4)}</strong><span className="ml-1 text-[10px] text-[#8d968f]">(full or partial redemption; limit validated in this form)</span><button type="button" onClick={() => setDetail({ ...draft.mf_detail, units: Number(available).toFixed(4) })} className="rounded-md border border-[#e1d9bd] bg-white px-2 py-1 text-[10px] font-semibold text-[#715d2c]">Redeem all</button></>}</div>}
       <DetailFields value={draft.mf_detail} onChange={setDetail} calculatedAmount={autoAmount} calculatedCashflow={autoCashflow} calculatedCharges={['PURCHASE', 'REDEMPTION', 'SWITCH_OUT', 'SWITCH_IN'].includes(type) && !manualCharges} />
       {type !== 'BONUS' && type !== 'OTHER' && <label className="flex items-start gap-2 text-[10px] leading-4 text-[#687a6e]"><input type="checkbox" checked={manualCharges} onChange={event => setManualCharges(event.target.checked)} className="mt-0.5" />Use statement charges / manual override. Scheme exit loads and any applicable historical charges must be entered from the transaction statement.</label>}
       <p className="text-[10px] leading-4 text-[#8a9388]">Amount is Units × NAV. Purchase and switch-in charges include SEBI stamp duty at 0.005% from 1 July 2020. Historical charges, scheme and holding-period-specific exit load, and STT for eligible equity-oriented fund redemptions must be checked against the statement. Cashflow is calculated from amount and charges.</p>

@@ -1273,10 +1273,12 @@ class WealthMFTransactionApiTests(TestCase):
         self.assertEqual(aggregate_rows[0]['option_type'], 'GROWTH')
         folio_rows = self.client.get(reverse('wealth-holdings') + '?group_by=folio').data['holdings']
         self.assertEqual(len(folio_rows), 2)
-        self.assertEqual(
-            self.client.get(reverse('wealth-holdings') + f'?folio={folio.pk}').data['holdings'][0]['units'],
-            '5.000000',
-        )
+        filtered_folio_holding = self.client.get(
+            reverse('wealth-holdings') + f'?folio={folio.pk}',
+        ).data['holdings'][0]
+        self.assertEqual(filtered_folio_holding['units'], '5.000000')
+        self.assertEqual(filtered_folio_holding['invested_cost'], '100.00')
+        self.assertEqual(filtered_folio_holding['average_cost_nav'], '20.0000')
 
     def test_holdings_keep_same_name_variants_separate_by_scheme_code(self):
         self.scheme.scheme_name = 'Same Display Name'

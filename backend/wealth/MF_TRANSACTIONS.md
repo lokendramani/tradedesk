@@ -14,6 +14,9 @@ detail contains `units`, `nav`, `amount`, `charges`, and signed `cashflow`.
 - Charges are non-negative. Purchase and switch-in cashflow is
   `-(amount + charges)`. Redemption, switch-out, and dividend cashflow is
   `amount - charges` and cannot be negative.
+- SIP purchases are the exception to the purchase amount convention: `amount`
+  is the net investment after charges, while `cashflow` is the scheduled total
+  debit (negative), so adding `amount + charges` recovers the debit exactly.
 - Bonus entries require positive units and zero cashflow and charges. Other
   entries retain their supplied signed cashflow without imposing a direction.
 - SIP is a `source` value and is valid only for a `PURCHASE` transaction.
