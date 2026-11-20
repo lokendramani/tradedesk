@@ -1,6 +1,8 @@
+import uuid
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import DecimalField, F, Q, Sum, Value
@@ -204,6 +206,13 @@ class MutualFundScheme(models.Model):
     scheme_code = models.CharField(max_length=32, unique=True)
     scheme_name = models.CharField(max_length=300)
     fund_house = models.CharField(max_length=180, blank=True)
+    fund_house_master = models.ForeignKey(
+        'WealthFundHouse',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='schemes',
+    )
     category_name = models.CharField(max_length=180, blank=True)
     asset_class = models.CharField(max_length=10, choices=AssetClass.choices, default=AssetClass.UNKNOWN)
     plan_type = models.CharField(max_length=10, choices=PlanType.choices, default=PlanType.UNKNOWN)
@@ -263,3 +272,510 @@ class SchemeCatalogueRunLock(models.Model):
 
     class Meta:
         db_table = 'wealth_scheme_catalogue_run_lock'
+
+
+class WealthFundHouse(models.Model):
+    """Normalized Wealth AMC identity; distinct legacy labels stay distinct."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=180, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_fund_houses'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class WealthFolio(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wealth_folios',
+    )
+    folio_number = models.CharField(max_length=80)
+    fund_house = models.ForeignKey(
+        WealthFundHouse,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='folios',
+    )
+    name = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_folios'
+        ordering = ['folio_number', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'folio_number'], name='uniq_wealth_user_folio'),
+        ]
+
+    def clean(self):
+        self.folio_number = self.folio_number.strip()
+        if not self.folio_number:
+            raise ValidationError({'folio_number': 'Folio number cannot be blank.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.folio_number
+
+
+class WealthInstrument(models.Model):
+    class InstrumentType(models.TextChoices):
+        MUTUAL_FUND = 'MUTUAL_FUND', 'Mutual fund'
+        OTHER = 'OTHER', 'Other'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instrument_type = models.CharField(
+        max_length=20,
+        choices=InstrumentType.choices,
+        default=InstrumentType.MUTUAL_FUND,
+    )
+    scheme = models.OneToOneField(
+        MutualFundScheme,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='wealth_instrument',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_instruments'
+        ordering = ['instrument_type', 'id']
+
+    def clean(self):
+        if self.instrument_type == self.InstrumentType.MUTUAL_FUND and not self.scheme_id:
+            raise ValidationError({'scheme': 'Mutual fund instruments require a catalogue scheme.'})
+        if self.instrument_type != self.InstrumentType.MUTUAL_FUND and self.scheme_id:
+            raise ValidationError({'scheme': 'Only mutual fund instruments can reference a catalogue scheme.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.scheme.scheme_name if self.scheme_id else self.get_instrument_type_display()
+
+
+class WealthTransaction(models.Model):
+    class TransactionType(models.TextChoices):
+        PURCHASE = 'PURCHASE', 'Purchase'
+        REDEMPTION = 'REDEMPTION', 'Redemption'
+        SWITCH_OUT = 'SWITCH_OUT', 'Switch out'
+        SWITCH_IN = 'SWITCH_IN', 'Switch in'
+        DIVIDEND = 'DIVIDEND', 'Dividend'
+        BONUS = 'BONUS', 'Bonus'
+        OTHER = 'OTHER', 'Other'
+
+    class Source(models.TextChoices):
+        MANUAL = 'MANUAL', 'Manual'
+        SIP = 'SIP', 'SIP'
+        IMPORT = 'IMPORT', 'Import'
+        OTHER = 'OTHER', 'Other'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wealth_transactions',
+    )
+    instrument = models.ForeignKey(
+        WealthInstrument,
+        on_delete=models.PROTECT,
+        related_name='transactions',
+    )
+    folio = models.ForeignKey(
+        WealthFolio,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='transactions',
+    )
+    transaction_type = models.CharField(max_length=12, choices=TransactionType.choices)
+    transaction_date = models.DateField()
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.MANUAL)
+    source_reference = models.CharField(max_length=120, blank=True)
+    switch_group_id = models.UUIDField(null=True, blank=True, db_index=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_transactions'
+        ordering = ['-transaction_date', '-created_at', '-id']
+        indexes = [
+            models.Index(fields=['user', 'transaction_date'], name='wealth_tx_user_date_idx'),
+            models.Index(fields=['instrument', 'transaction_date'], name='wealth_tx_inst_date_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(Q(transaction_type__in=['SWITCH_OUT', 'SWITCH_IN'], switch_group_id__isnull=False)
+                       | (~Q(transaction_type__in=['SWITCH_OUT', 'SWITCH_IN']) & Q(switch_group_id__isnull=True))),
+                name='wealth_switch_type_group_consistent',
+            ),
+            models.CheckConstraint(
+                check=(~Q(source='SIP') | Q(transaction_type='PURCHASE')),
+                name='wealth_sip_source_purchase_only',
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.folio_id and self.user_id and self.folio.user_id != self.user_id:
+            errors['folio'] = 'Choose one of your own folios.'
+        if self.instrument_id and self.folio_id:
+            scheme = self.instrument.scheme if self.instrument.scheme_id else None
+            if scheme and self.folio.fund_house_id and scheme.fund_house_master_id != self.folio.fund_house_id:
+                errors['folio'] = 'Folio fund house must match the selected mutual fund scheme.'
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class WealthMFTransactionDetail(models.Model):
+    class ChargesSource(models.TextChoices):
+        AUTOMATIC = 'AUTOMATIC', 'Automatic'
+        MANUAL = 'MANUAL', 'Manual'
+        MIXED = 'MIXED', 'Mixed'
+
+    transaction = models.OneToOneField(
+        WealthTransaction,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name='mf_detail',
+    )
+    units = models.DecimalField(max_digits=22, decimal_places=4, default=Decimal('0'))
+    nav = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal('0'))
+    amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0'))
+    charges = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0'))
+    charges_source = models.CharField(
+        max_length=10,
+        choices=ChargesSource.choices,
+        default=ChargesSource.MANUAL,
+    )
+    charges_breakdown = models.JSONField(default=dict, blank=True)
+    cashflow = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0'))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_mf_transaction_details'
+
+    def clean(self):
+        errors = {}
+        transaction_type = getattr(getattr(self, 'transaction', None), 'transaction_type', None)
+        if self.units < 0:
+            errors['units'] = 'Units cannot be negative.'
+        if self.nav < 0:
+            errors['nav'] = 'NAV cannot be negative.'
+        if self.amount < 0:
+            errors['amount'] = 'Amount cannot be negative.'
+        if self.charges < 0:
+            errors['charges'] = 'Charges cannot be negative.'
+
+        unit_transactions = {
+            WealthTransaction.TransactionType.PURCHASE,
+            WealthTransaction.TransactionType.REDEMPTION,
+            WealthTransaction.TransactionType.SWITCH_OUT,
+            WealthTransaction.TransactionType.SWITCH_IN,
+        }
+        if transaction_type in unit_transactions and self.units <= 0:
+            errors['units'] = 'Units must be greater than zero for this transaction type.'
+        if transaction_type in unit_transactions and self.nav <= 0:
+            errors['nav'] = 'NAV must be greater than zero for this transaction type.'
+        if transaction_type in unit_transactions and self.amount <= 0:
+            errors['amount'] = 'Amount must be greater than zero for this transaction type.'
+        debit_types = {
+            WealthTransaction.TransactionType.PURCHASE,
+            WealthTransaction.TransactionType.SWITCH_IN,
+        }
+        credit_types = {
+            WealthTransaction.TransactionType.REDEMPTION,
+            WealthTransaction.TransactionType.SWITCH_OUT,
+            WealthTransaction.TransactionType.DIVIDEND,
+        }
+        if transaction_type in debit_types:
+            if self.cashflow >= 0:
+                errors['cashflow'] = 'Cashflow for a purchase or switch-in must be negative.'
+        elif transaction_type in credit_types:
+            if self.amount <= 0:
+                errors['amount'] = 'Amount must be greater than zero for this transaction type.'
+            if self.cashflow <= 0:
+                errors['cashflow'] = 'Cashflow for a redemption, switch-out, or dividend must be positive.'
+        elif transaction_type == WealthTransaction.TransactionType.BONUS:
+            if self.units <= 0:
+                errors['units'] = 'Bonus units must be greater than zero.'
+            if self.cashflow != 0 or self.charges != 0:
+                errors['cashflow'] = 'Bonus transactions cannot have a cashflow or charges.'
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class WealthTransactionAudit(models.Model):
+    class Action(models.TextChoices):
+        CREATED = 'CREATED', 'Created'
+        UPDATED = 'UPDATED', 'Updated'
+        DELETED = 'DELETED', 'Deleted'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    transaction = models.ForeignKey(
+        WealthTransaction,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='audit_history',
+    )
+    transaction_id_snapshot = models.UUIDField(db_index=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wealth_transaction_audits',
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='wealth_transaction_audit_actions',
+    )
+    action = models.CharField(max_length=10, choices=Action.choices)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'wealth_transaction_audits'
+        ordering = ['-created_at', '-id']
+
+
+class WealthSIPMandate(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        PAUSED = 'PAUSED', 'Paused'
+        COMPLETED = 'COMPLETED', 'Completed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wealth_sip_mandates',
+    )
+    scheme = models.ForeignKey(
+        MutualFundScheme,
+        on_delete=models.PROTECT,
+        related_name='wealth_sip_mandates',
+    )
+    folio = models.ForeignKey(
+        WealthFolio,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='sip_mandates',
+    )
+    monthly_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    sip_day = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(31)])
+    start_date = models.DateField()
+    generate_from_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    generated_through = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_sip_mandates'
+        ordering = ['-created_at', '-id']
+
+    def clean(self):
+        errors = {}
+        if self.monthly_amount is not None and self.monthly_amount <= 0:
+            errors['monthly_amount'] = 'Monthly amount must be greater than zero.'
+        if self.start_date and self.generate_from_date and self.generate_from_date < self.start_date:
+            errors['generate_from_date'] = 'Installments cannot be generated before the SIP start date.'
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            errors['end_date'] = 'End date cannot be before the SIP start date.'
+        if self.folio_id and self.user_id and self.folio.user_id != self.user_id:
+            errors['folio'] = 'Choose one of your own folios.'
+        if self.folio_id and self.folio.fund_house_id and self.scheme_id:
+            if self.scheme.fund_house_master_id != self.folio.fund_house_id:
+                errors['folio'] = 'Folio fund house must match the selected scheme.'
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class WealthSIPInstallment(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        CONFIRMED = 'CONFIRMED', 'Confirmed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    mandate = models.ForeignKey(
+        WealthSIPMandate,
+        on_delete=models.CASCADE,
+        related_name='installments',
+    )
+    scheduled_date = models.DateField()
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    transaction = models.OneToOneField(
+        WealthTransaction,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='sip_installment',
+    )
+    transaction_id_snapshot = models.UUIDField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_sip_installments'
+        ordering = ['scheduled_date', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['mandate', 'scheduled_date'], name='uniq_wealth_sip_installment_date'),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.amount is not None and self.amount <= 0:
+            errors['amount'] = 'Installment amount must be greater than zero.'
+        if self.scheduled_date and self.mandate_id:
+            if self.scheduled_date < self.mandate.start_date:
+                errors['scheduled_date'] = 'Installment cannot precede the SIP start date.'
+            if self.mandate.end_date and self.scheduled_date > self.mandate.end_date:
+                errors['scheduled_date'] = 'Installment cannot fall after the SIP end date.'
+        if self.transaction_id and self.transaction_id_snapshot != self.transaction_id:
+            self.transaction_id_snapshot = self.transaction_id
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class WealthMFNAVHistory(models.Model):
+    class Source(models.TextChoices):
+        MFAPI = 'MFAPI', 'MFAPI'
+        AMFI = 'AMFI', 'AMFI'
+
+    scheme = models.ForeignKey(
+        MutualFundScheme,
+        on_delete=models.PROTECT,
+        related_name='nav_history',
+    )
+    nav_date = models.DateField()
+    nav = models.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0.0001'))],
+    )
+    source = models.CharField(max_length=8, choices=Source.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_mf_nav_history'
+        ordering = ['nav_date']
+        constraints = [
+            models.UniqueConstraint(fields=['scheme', 'nav_date'], name='uniq_wealth_mf_nav_date'),
+            models.CheckConstraint(check=Q(nav__gt=0), name='wealth_mf_nav_positive'),
+        ]
+        indexes = [
+            models.Index(fields=['scheme', '-nav_date'], name='wealth_mf_nav_latest_idx'),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.nav is not None and self.nav <= 0:
+            errors['nav'] = 'NAV must be positive.'
+        if self.nav_date and self.nav_date > timezone.localdate():
+            errors['nav_date'] = 'NAV date cannot be in the future.'
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f'{self.scheme.scheme_code} {self.nav_date} {self.nav}'
+
+
+class WealthMFNAVHistoryLoad(models.Model):
+    scheme = models.OneToOneField(
+        MutualFundScheme,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name='nav_history_load',
+    )
+    history_loaded_at = models.DateTimeField(null=True, blank=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    error_summary = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        db_table = 'wealth_mf_nav_history_loads'
+
+
+class WealthMFNAVUpdateRun(models.Model):
+    class Status(models.TextChoices):
+        RUNNING = 'RUNNING', 'Running'
+        SUCCESS = 'SUCCESS', 'Success'
+        PARTIAL = 'PARTIAL', 'Partial'
+        FAILED = 'FAILED', 'Failed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trigger_type = models.CharField(max_length=20, default='ADMIN_MANUAL')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.RUNNING)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='wealth_mf_nav_update_runs',
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    held_scheme_count = models.PositiveIntegerField(default=0)
+    inserted_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    error_summary = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        db_table = 'wealth_mf_nav_update_runs'
+        ordering = ['-started_at', '-id']
+
+
+class WealthMFNAVUpdateLock(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    active_run = models.ForeignKey(
+        WealthMFNAVUpdateRun,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='active_lock_rows',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'wealth_mf_nav_update_lock'

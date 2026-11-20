@@ -1,0 +1,35 @@
+info:
+  name: Create Transaction
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/wealth/transactions/"
+  headers:
+    - name: Authorization
+      value: Bearer {{accessToken}}
+  body:
+    type: json
+    data: |-
+      {
+        "transaction_type": "PURCHASE",
+        "transaction_date": "2026-09-14",
+        "source": "MANUAL",
+        "scheme_code": "120403",
+        "mf_detail": {
+          "units": "127.4530",
+          "nav": "235.2700",
+          "amount": "29985.87",
+          "charges": "0.00",
+          "cashflow": "-29985.87"
+        }
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

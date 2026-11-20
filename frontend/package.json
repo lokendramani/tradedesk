@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test tests/wealthMilestones.test.ts tests/schemeCataloguePagination.test.ts",
+    "test": "node --test tests/wealthMilestones.test.ts tests/schemeCataloguePagination.test.ts tests/wealthNavUpdateState.test.ts tests/wealthTransactions.test.ts tests/wealthPortfolioChart.test.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

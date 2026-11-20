@@ -1,0 +1,23 @@
+info:
+  name: Get Folio By ID
+  type: http
+  seq: 10
+
+http:
+  method: GET
+  url: /api/wealth/holdings/?group_by=folio/
+  headers:
+    - name: Authorization
+      value: Bearer {{accessToken}}
+  params:
+    - name: group_by
+      value: folio/
+      type: query
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
