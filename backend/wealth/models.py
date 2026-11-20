@@ -477,7 +477,9 @@ class WealthMFTransactionDetail(models.Model):
 
     def clean(self):
         errors = {}
-        transaction_type = getattr(getattr(self, 'transaction', None), 'transaction_type', None)
+        transaction_record = getattr(self, 'transaction', None)
+        transaction_type = getattr(transaction_record, 'transaction_type', None)
+        transaction_source = getattr(transaction_record, 'source', None)
         if self.units < 0:
             errors['units'] = 'Units cannot be negative.'
         if self.nav < 0:
@@ -499,6 +501,27 @@ class WealthMFTransactionDetail(models.Model):
             errors['nav'] = 'NAV must be greater than zero for this transaction type.'
         if transaction_type in unit_transactions and self.amount <= 0:
             errors['amount'] = 'Amount must be greater than zero for this transaction type.'
+
+        if transaction_type in unit_transactions and self.units > 0 and self.nav > 0:
+            if (
+                transaction_type == WealthTransaction.TransactionType.PURCHASE
+                and transaction_source == WealthTransaction.Source.SIP
+            ):
+                expected_units = (self.amount / self.nav).quantize(
+                    Decimal('0.0001'), rounding=ROUND_HALF_UP,
+                )
+                if self.amount > 0 and self.units != expected_units:
+                    errors['units'] = 'SIP purchase units must equal net amount divided by NAV, rounded to four decimal places.'
+                expected_cashflow = -(self.amount + self.charges)
+                if self.cashflow != expected_cashflow:
+                    errors['cashflow'] = 'SIP purchase cashflow must equal the negative total debit (amount plus charges).'
+            else:
+                expected_amount = (self.units * self.nav).quantize(
+                    Decimal('0.01'), rounding=ROUND_HALF_UP,
+                )
+                if self.amount != expected_amount:
+                    errors['amount'] = 'Amount must equal units multiplied by NAV, rounded to two decimal places.'
+
         debit_types = {
             WealthTransaction.TransactionType.PURCHASE,
             WealthTransaction.TransactionType.SWITCH_IN,

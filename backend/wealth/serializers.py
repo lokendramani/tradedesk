@@ -340,7 +340,10 @@ class WealthTransactionSerializer(serializers.ModelSerializer):
                 detail_data_for_validation.update(detail_data)
         if detail_data_for_validation is not None:
             detail = WealthMFTransactionDetail(**detail_data_for_validation)
-            detail.transaction = WealthTransaction(transaction_type=transaction_type)
+            detail.transaction = WealthTransaction(
+                transaction_type=transaction_type,
+                source=source,
+            )
             try:
                 detail.clean()
             except DjangoValidationError as exc:

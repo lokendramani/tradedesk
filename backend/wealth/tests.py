@@ -467,6 +467,91 @@ class CashFlowApiTests(TestCase):
         self.assertEqual(category.name, CashFlowCategory.objects.get(pk=category.pk).name)
 
 
+class WealthMFTransactionDetailAccountingPureTests(SimpleTestCase):
+    def make_detail(self, kind, *, source='MANUAL', units='5.0000', nav='20.0000',
+                    amount='100.00', charges='0.00', cashflow='-100.00'):
+        detail = WealthMFTransactionDetail(
+            units=Decimal(units), nav=Decimal(nav), amount=Decimal(amount),
+            charges=Decimal(charges), cashflow=Decimal(cashflow),
+        )
+        detail.transaction = WealthTransaction(transaction_type=kind, source=source)
+        return detail
+
+    def assert_detail_invalid(self, detail, field):
+        with self.assertRaises(DjangoValidationError) as raised:
+            detail.clean()
+        self.assertIn(field, raised.exception.message_dict)
+
+    def test_regular_purchase_and_redemption_require_amount_to_match_units_times_nav(self):
+        for kind, cashflow in (
+            (WealthTransaction.TransactionType.PURCHASE, '-100.00'),
+            (WealthTransaction.TransactionType.REDEMPTION, '100.00'),
+        ):
+            with self.subTest(kind=kind):
+                self.make_detail(kind, cashflow=cashflow).clean()
+                self.assert_detail_invalid(
+                    self.make_detail(kind, amount='99.99', cashflow=cashflow), 'amount',
+                )
+
+        rounded = self.make_detail(
+            WealthTransaction.TransactionType.PURCHASE,
+            units='1.0000', nav='1.0050', amount='1.01', cashflow='-1.01',
+        )
+        rounded.clean()
+
+    def test_switch_in_and_out_require_amount_to_match_units_times_nav(self):
+        for kind, cashflow in (
+            (WealthTransaction.TransactionType.SWITCH_IN, '-100.00'),
+            (WealthTransaction.TransactionType.SWITCH_OUT, '100.00'),
+        ):
+            with self.subTest(kind=kind):
+                self.make_detail(kind, cashflow=cashflow).clean()
+                self.assert_detail_invalid(
+                    self.make_detail(kind, amount='99.99', cashflow=cashflow), 'amount',
+                )
+
+    def test_sip_purchase_validates_rounded_units_and_total_debit_cashflow(self):
+        self.make_detail(
+            WealthTransaction.TransactionType.PURCHASE, source='SIP',
+            units='33.3182', nav='30.0100', amount='999.88', charges='0.12',
+            cashflow='-1000.00',
+        ).clean()
+        self.assert_detail_invalid(
+            self.make_detail(
+                WealthTransaction.TransactionType.PURCHASE, source='SIP',
+                units='33.3181', nav='30.0100', amount='999.88', charges='0.12',
+                cashflow='-1000.00',
+            ),
+            'units',
+        )
+        self.assert_detail_invalid(
+            self.make_detail(
+                WealthTransaction.TransactionType.PURCHASE, source='SIP',
+                units='33.3182', nav='30.0100', amount='999.88', charges='0.12',
+                cashflow='-999.99',
+            ),
+            'cashflow',
+        )
+        self.make_detail(
+            WealthTransaction.TransactionType.PURCHASE, source='SIP',
+            units='0.1235', nav='8.1000', amount='1.00', charges='0.00',
+            cashflow='-1.00',
+        ).clean()
+
+    def test_dividend_bonus_and_other_do_not_apply_units_nav_amount_rule(self):
+        cases = (
+            (WealthTransaction.TransactionType.DIVIDEND, '1.0000', '2.0000', '7.00', '0.00', '7.00'),
+            (WealthTransaction.TransactionType.BONUS, '1.0000', '2.0000', '7.00', '0.00', '0.00'),
+            (WealthTransaction.TransactionType.OTHER, '1.0000', '2.0000', '7.00', '1.00', '-8.00'),
+        )
+        for kind, units, nav, amount, charges, cashflow in cases:
+            with self.subTest(kind=kind):
+                self.make_detail(
+                    kind, units=units, nav=nav, amount=amount, charges=charges,
+                    cashflow=cashflow,
+                ).clean()
+
+
 class WealthMilestoneCalculationTests(TestCase):
     def make_milestone(self, **overrides):
         values = {
@@ -1340,14 +1425,19 @@ class WealthMFTransactionApiTests(TestCase):
         self.assertIn('folio', response.data)
         self.assertEqual(WealthTransaction.objects.count(), 0)
 
-    def test_detail_rejects_wrong_cash_direction_but_accepts_independent_amount(self):
+    def test_detail_rejects_amount_inconsistent_with_units_and_nav(self):
         independent_amount = self.transaction_payload(amount='10000.00')
         independent_amount['mf_detail'].update(
             units='78.1412', nav='127.9765', charges='7.25', cashflow='-10000.00',
         )
         response = self.client.post(reverse('wealth-transactions'), independent_amount, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('amount', response.data['mf_detail'])
+
+        independent_amount['mf_detail']['amount'] = '10000.24'
+        response = self.client.post(reverse('wealth-transactions'), independent_amount, format='json')
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data['mf_detail']['amount'], '10000.00')
+        self.assertEqual(response.data['mf_detail']['amount'], '10000.24')
         self.assertEqual(response.data['mf_detail']['cashflow'], '-10000.00')
         self.assertEqual(response.data['mf_detail']['units'], '78.1412')
         self.assertEqual(response.data['mf_detail']['nav'], '127.9765')
@@ -1415,14 +1505,22 @@ class WealthMFTransactionApiTests(TestCase):
         )
         self.assertEqual(created.status_code, 201, created.data)
         detail_url = reverse('wealth-transaction-detail', args=[created.data['id']])
-        patches = {
-            'units': '5.1234',
-            'nav': '20.1234',
-            'amount': '101.25',
-            'charges': '1.25',
-            'cashflow': '-101.25',
-        }
-        for field, value in patches.items():
+        for field, value in (('units', '5.1234'), ('nav', '20.1234'), ('amount', '101.25')):
+            response = self.client.patch(
+                detail_url, {'mf_detail': {field: value}}, format='json',
+            )
+            self.assertEqual(response.status_code, 400, (field, response.data))
+            self.assertIn('amount', response.data['mf_detail'])
+
+        response = self.client.patch(
+            detail_url,
+            {'mf_detail': {'units': '5.0000', 'nav': '21.0000', 'amount': '105.00'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['mf_detail']['amount'], '105.00')
+
+        for field, value in (('charges', '1.25'), ('cashflow', '-101.25')):
             response = self.client.patch(
                 detail_url, {'mf_detail': {field: value}}, format='json',
             )
@@ -1436,6 +1534,20 @@ class WealthMFTransactionApiTests(TestCase):
         self.assertEqual(created.data['transaction_type'], 'PURCHASE')
         self.assertEqual(created.data['source'], 'SIP')
         self.assertEqual(created.data['mf_detail']['cashflow'], '-100.00')
+
+        invalid_sip = self.transaction_payload(date='2026-09-30', source='SIP')
+        invalid_sip['mf_detail']['units'] = '4.9999'
+        response = self.client.post(reverse('wealth-transactions'), invalid_sip, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('units', response.data['mf_detail'])
+
+        invalid_sip_cashflow = self.transaction_payload(date='2026-09-30', source='SIP')
+        invalid_sip_cashflow['mf_detail'].update(charges='1.00', cashflow='-100.00')
+        response = self.client.post(
+            reverse('wealth-transactions'), invalid_sip_cashflow, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('cashflow', response.data['mf_detail'])
 
         redemption = self.transaction_payload(scheme_code='120603', date='2026-10-22')
         redemption.update(transaction_type='REDEMPTION', source='MANUAL')
